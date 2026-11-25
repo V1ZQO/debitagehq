@@ -1,0 +1,57 @@
+# Construit l'installateur Windows et publie la mise à jour sur GitHub Releases.
+# Se lance tout seul quand la version change dans package.json sur la branche main,
+# ou à la main depuis l'onglet Actions > « Publier une mise à jour » > Run workflow.
+name: Publier une mise à jour
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lire la version
+        id: v
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Vérifier que cette version n'est pas déjà publiée
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
+            echo "La version ${{ steps.v.outputs.version }} existe déjà : change le numéro de version dans package.json."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.skip == 'false'
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Installer
+        if: steps.check.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Construire et publier
+        if: steps.check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win nsis --x64 --publish always
