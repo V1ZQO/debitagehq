@@ -13,6 +13,9 @@ nativeTheme.themeSource = 'dark';
 const ICON = path.join(__dirname, 'app', 'icon.png');
 const TRAY_ICON = path.join(__dirname, 'app', 'tray.png');
 let win = null, tray = null, quitting = false, splash = null, splashStart = 0, booted = false;
+// Au lancement, on vérifie les mises à jour avant d'ouvrir l'appli (« portail »).
+let gateDone = !app.isPackaged, bootWanted = false, updatingNow = false;
+function openGate() { if (gateDone) return; gateDone = true; if (bootWanted) finishBoot(); }
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on('second-instance', () => showWindow());
@@ -54,12 +57,14 @@ function createSplash() {
   });
   splash.loadFile(path.join(__dirname, 'app', 'splash.html'));
   splash.once('ready-to-show', () => splash.show());
+  splash.webContents.once('did-finish-load', () => { if (!gateDone && !updatingNow) splashProgress(12, 'Recherche de mises à jour…'); });
   splash.on('closed', () => { splash = null; });
-  setTimeout(() => finishBoot(), 15000); // sécurité : on ouvre l'appli quoi qu'il arrive
+  setTimeout(() => { if (!updatingNow) { openGate(); finishBoot(); } }, 15000); // sécurité : on ouvre l'appli quoi qu'il arrive
 }
 function splashProgress(pct, text) { if (splash && !splash.isDestroyed()) splash.webContents.send('splash-progress', { pct, text }); }
 function finishBoot() {
-  if (booted) return; booted = true;
+  bootWanted = true;
+  if (booted || !gateDone || updatingNow) return; booted = true;
   const wait = Math.max(0, 2200 - (Date.now() - splashStart)); // laisse le temps de voir l'animation
   setTimeout(() => {
     splashProgress(100, 'Prêt');
@@ -69,7 +74,7 @@ function finishBoot() {
     }, 380);
   }, wait);
 }
-ipcMain.on('boot-progress', (_e, p) => { if (p && typeof p.pct === 'number') splashProgress(p.pct, typeof p.text === 'string' ? p.text : ''); });
+ipcMain.on('boot-progress', (_e, p) => { if (!updatingNow && gateDone && p && typeof p.pct === 'number') splashProgress(p.pct, typeof p.text === 'string' ? p.text : ''); });
 ipcMain.on('boot-done', () => finishBoot());
 
 function createTray() {
@@ -244,7 +249,20 @@ function setupUpdates() {
   try { ({ autoUpdater } = require('electron-updater')); } catch { return; }
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  // Mise à jour trouvée au lancement : on l'installe tout de suite, sur l'écran de chargement.
+  let startVer = '';
+  const gateTimer = setTimeout(openGate, 7000); // GitHub ne répond pas : on ouvre l'appli
+  autoUpdater.on('update-available', (info) => {
+    if (gateDone) return;
+    clearTimeout(gateTimer); updatingNow = true; startVer = String((info && info.version) || '');
+    splashProgress(15, `Mise à jour vers la v${startVer}…`);
+    setTimeout(() => { if (updatingNow) { updatingNow = false; openGate(); } }, 4 * 60 * 1000); // trop long : on ouvre, elle s'installera à la fermeture
+  });
+  autoUpdater.on('download-progress', (p) => { if (updatingNow && p) splashProgress(15 + Math.round((p.percent || 0) * 0.8), `Mise à jour vers la v${startVer}… ${Math.round(p.percent || 0)} %`); });
+  autoUpdater.on('update-not-available', () => { clearTimeout(gateTimer); openGate(); });
+  autoUpdater.on('error', () => { clearTimeout(gateTimer); updatingNow = false; openGate(); });
   autoUpdater.on('update-downloaded', (info) => {
+    if (updatingNow) { splashProgress(100, 'Installation de la mise à jour…'); quitting = true; setTimeout(() => autoUpdater.quitAndInstall(true, true), 700); return; }
     updateReady = info && info.version;
     if (win) win.webContents.send('update-ready', updateReady);
     if (Notification.isSupported()) {
@@ -252,13 +270,11 @@ function setupUpdates() {
       n.on('click', showWindow); n.show();
     }
   });
-  autoUpdater.on('error', () => { checking = false; });
-  autoUpdater.on('update-not-available', () => { checking = false; });
   const check = () => { if (checking || updateReady) return; checking = true; autoUpdater.checkForUpdates().catch(() => {}).finally(() => { checking = false; }); };
   ipcMain.handle('install-update', () => { if (!updateReady) return false; quitting = true; setImmediate(() => autoUpdater.quitAndInstall(true, true)); return true; });
   ipcMain.handle('check-updates', () => { check(); return true; });
   ipcMain.handle('update-status', () => updateReady);
-  setTimeout(check, 8000);
+  check();
   setInterval(check, 60 * 60 * 1000);
 }
 if (!app.isPackaged) {
