@@ -32,7 +32,7 @@ const CATS = {
     taskEx: 'Ex. Script de permis de conduire'
   },
   cheat: {
-    folders: ['Builds', 'Sources', 'Offsets', 'Configs', 'Menu / UI', 'Outils', 'Docs', 'Autre'],
+    folders: ['Builds', 'Sources', 'Offsets', 'Bypass', 'Configs', 'Menu / UI', 'Outils', 'Docs', 'Autre'],
     ttags: ['Fonctionnalité', 'Menu / UI', 'Mise à jour', 'Bug', 'Test', 'Release', 'Autre'],
     ntags: ['Idée', 'Code', 'Recherche', 'Changelog', 'Réunion', 'Autre'],
     filesSub: "Builds, sources, offsets et configs partagés par l'équipe.",
