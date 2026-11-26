@@ -314,6 +314,28 @@ code.ic{font:12px Consolas,ui-monospace,monospace;background:rgba(255,255,255,.0
 .hrow.cur .hv{background:#1c2b6e;border-color:#2f47b8;color:#fff}
 /* 0.4.7 : les menus flottants doivent recevoir les clics même au-dessus de la zone de déplacement de la fenêtre */
 .pop,.pop *,#lbox,#lbox *,.mebtn{-webkit-app-region:no-drag !important}
+/* ---- 0.5.0 : profils ---- */
+.av{overflow:visible}.av img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.av.xl{width:64px;height:64px;font-size:24px}.av.xxl{width:96px;height:96px;font-size:36px}
+.av.xl::after{width:13px;height:13px;right:1px;bottom:1px;border-width:3px}.av.xxl::after{width:17px;height:17px;right:3px;bottom:3px;border-width:3px;border-color:#1b1b1f}
+.whob,.profb{all:unset;display:inline-flex;align-items:center;gap:6px;cursor:default;border-radius:6px;-webkit-app-region:no-drag}
+.whob{color:var(--ink);font-weight:500}.whob:hover{text-decoration:underline}.whob .av{width:18px;height:18px;font-size:8px}.whob .av::after{display:none}
+.whob:focus-visible,.profb:focus-visible,.mtop:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.team{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.mcard{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:12px;padding:16px 14px 14px;display:grid;justify-items:center;text-align:center;gap:8px}
+.mcard:hover{border-color:var(--line2)}
+.mtop{all:unset;display:grid;justify-items:center;gap:5px;cursor:default;border-radius:10px;width:100%}
+.mtop>b{font-size:14px;font-weight:600;margin-top:4px}.mtop small{color:var(--mute);font-size:11.5px}
+.mtop .av::after{border-color:var(--panel)}
+.role{display:inline-block;padding:1px 9px;border-radius:20px;font-size:11px;font-weight:600;background:#2a1215;color:#ff9aa0;border:1px solid #5a1b21}
+.mbio{margin:0;font-size:12px;color:#c4c4cb;line-height:1.45;min-height:34px;overflow-wrap:anywhere}.empty2{color:var(--mute);font-style:italic}
+.mcard .row{justify-content:center;gap:6px}
+.profed{display:flex;align-items:center;gap:16px;margin-bottom:14px}.profed .av::after{display:none}
+.profbtns{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.profbtns small{width:100%;font-size:11px}
+.pform{display:grid;gap:10px}.pform label{display:grid;gap:5px;font-size:12px;color:var(--mute)}.pform textarea{resize:vertical}
+.prof{display:grid;justify-items:center;text-align:center;gap:7px;padding:4px 0}
+.pname{font-size:18px;font-weight:600;margin-top:4px}.pseen{display:flex;align-items:center;gap:6px;color:var(--mute)}
+.pbio{margin:6px 0 2px;max-width:360px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;color:#d6d6dc}
 </style>
 </head>
 <body>

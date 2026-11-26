@@ -8,7 +8,7 @@ const QG = window.qg || { rcCapture: async () => true, rcSession: async () => tr
 const CFG_KEY = 'qg.config';
 let cfg = loadCfg(), sb = null, me = null, phase = 'boot', authTab = 'login', authMsg = '';
 const S = { files: [], tasks: [], events: [], notes: [], messages: [], dms: [], notifications: [], reactions: [] };
-let noteMode = 'edit', noteLive = null, reactReady = true, presMeta = {}, myStatus = (() => { try { return localStorage.getItem('qg.status') || 'dispo' } catch { return 'dispo' } })();
+let profReady = true, noteMode = 'edit', noteLive = null, reactReady = true, presMeta = {}, myStatus = (() => { try { return localStorage.getItem('qg.status') || 'dispo' } catch { return 'dispo' } })();
 let notifReady = true, soundOn = (() => { try { return localStorage.getItem('qg.sound') !== '0' } catch { return true } })();
 let autoStart = true, online = new Set(), pres = null, dmReady = true, dmOpen = (() => { try { return localStorage.getItem('qg.dm') !== '0' } catch { return true } })(), dmWith = null, dmDraft = '';
 let members = []; const names = {}; const thumbs = {};
@@ -121,7 +121,7 @@ const QUERIES = {
   reactions: () => sb.from('reactions').select('*').order('at', { ascending: false }).limit(3000)
 };
 async function loadTable(t) { const { data, error } = await QUERIES[t](); if (t === 'dms') dmReady = !error; if (t === 'notifications') notifReady = !error; if (t === 'reactions') reactReady = !error; if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'messages' || t === 'dms') ensureImgs(); if (t === 'dms') markRead(); render() } }
-async function loadMembers() { let { data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen').order('name'); if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at').order('name')); if (!error) { members = data || []; members.forEach(m => names[m.user_id] = m.name); render() } }
+async function loadMembers() { let { data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen,avatar,role,bio').order('name'); profReady = !error; if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen').order('name')); if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at').order('name')); if (!error) { members = data || []; members.forEach(m => names[m.user_id] = m.name); render(); ensureAvatars() } }
 const timers = {};
 function reload(t) { clearTimeout(timers[t]); timers[t] = setTimeout(() => t === 'members' ? loadMembers() : S[t] && loadTable(t), 250) }
 let channel = null;
@@ -270,14 +270,14 @@ function vNotes() {
 function vChat() {
   const ms = [...SP('messages')].reverse();
   return `<div class="bar"><div><h2>Discussion</h2><p class="sub">Les 150 derniers messages de l'équipe.</p></div></div>
-<div class="chat" id="chatlog">${ms.map(m => `<div class="msg${m.author === me ? ' me' : ''}"><div class="who">${esc(nm(m.author))} <span>${esc(ago(m.at))}</span>${rxAdd('msg', m.id)}${m.author === me ? `<button class="x" data-act="delmsg" data-id="${esc(m.id)}" aria-label="Supprimer le message">×</button>` : ''}</div>${msgImg(m.img)}${m.body ? `<div class="txt">${rich(m.body)}</div>` : ''}${rxBar('msg', m.id)}</div>`).join('') || '<p class="empty">Lance la conversation.</p>'}</div>
+<div class="chat" id="chatlog">${ms.map(m => `<div class="msg${m.author === me ? ' me' : ''}"><div class="who"><button class="whob" data-prof="${esc(m.author)}">${avatar(m.author)}${esc(nm(m.author))}</button> <span>${esc(ago(m.at))}</span>${rxAdd('msg', m.id)}${m.author === me ? `<button class="x" data-act="delmsg" data-id="${esc(m.id)}" aria-label="Supprimer le message">×</button>` : ''}</div>${msgImg(m.img)}${m.body ? `<div class="txt">${rich(m.body)}</div>` : ''}${rxBar('msg', m.id)}</div>`).join('') || '<p class="empty">Lance la conversation.</p>'}</div>
 ${imgQueue('chat')}<form class="send" id="chatf">${imgPick('cimgin')}${codePick('ctext')}<textarea id="ctext" rows="2" maxlength="4000" placeholder="Écris un message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne, glisse ou colle une image)" aria-label="Message"></textarea><button class="pri">Envoyer</button></form>`
 }
 function vTeam() {
-  return `<div class="bar"><div><h2>Équipe</h2><p class="sub">Les membres de l'équipe.</p></div></div>
-<div class="grid2">
-<section class="panel"><h3>Membres (${members.length})</h3>${members.map(m => `<div class="mem"><b>${avatar(m.user_id)}${esc(m.name)}${m.user_id === me ? ' (moi)' : ''}</b>${m.user_id !== me ? `<button class="sm" data-act="dmto" data-id="${esc(m.user_id)}">Message</button>` : ''}<span class="sub">depuis le ${esc(new Date(ts(m.joined_at)).toLocaleDateString('fr-FR'))}</span></div>`).join('')}</section>
-</div>`
+  const list = [...members].sort((x, y) => (y.user_id === me) - (x.user_id === me) || (online.has(y.user_id) - online.has(x.user_id)) || String(x.name).localeCompare(String(y.name)));
+  return `<div class="bar"><div><h2>Équipe</h2><p class="sub">${members.length} membre${members.length > 1 ? 's' : ''}. Clique sur quelqu'un pour voir son profil.</p></div>${profReady ? '<a class="btn" href="#parametres">Modifier mon profil</a>' : ''}</div>
+${profReady ? '' : '<div class="notice" style="margin-bottom:14px">Pour les profils (photo, rôle, bio), lance le fichier <b>supabase-update-0.5.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l\'appli.</div>'}
+<div class="team">${list.map(m => { const id = esc(m.user_id); return `<article class="mcard"><button class="mtop" data-prof="${id}" aria-label="Voir le profil de ${esc(m.name)}">${avatar(m.user_id, 'xl')}<b>${esc(m.name)}${m.user_id === me ? ' <span class="sub">(moi)</span>' : ''}</b>${m.role ? `<span class="role">${esc(m.role)}</span>` : ''}<small>${esc(seenText(m))}</small></button>${m.bio ? `<p class="mbio">${esc(String(m.bio).slice(0, 140))}</p>` : '<p class="mbio empty2">Pas encore de bio.</p>'}<div class="row">${m.user_id !== me ? `<button class="sm pri" data-act="dmto" data-id="${id}">Message</button>` : ''}<button class="sm ghost" data-prof="${id}">Voir le profil</button></div></article>` }).join('')}</div>`
 }
 function vSettings() {
   return `<div class="bar"><div><h2>Paramètres</h2><p class="sub">Invitations, pseudo et réglages de l'application.</p></div><button class="ghost" data-act="logout">Se déconnecter</button></div>
@@ -285,7 +285,7 @@ function vSettings() {
 <section class="panel"><h3>Inviter un collègue</h3><p>Envoie-lui l'installateur de l'application et ce code d'invitation. Il le collera au premier lancement.</p>
 <div class="code" id="invite">${esc(makeCode(cfg))}</div><div class="row" style="margin-top:10px"><button class="pri" data-act="copyinvite">Copier le code</button></div>
 <p class="sub" style="margin-top:10px">Garde ce code dans l'équipe : n'importe qui qui l'a peut rejoindre DebitageHQ.</p></section>
-<section class="panel"><h3>Mon pseudo</h3><form id="namef" class="row"><input id="myname" name="name" maxlength="40" value="${esc(names[me] || '')}" required style="flex:1"><button class="pri">Enregistrer</button></form></section>
+${profileEditor()}
 <section class="panel"><h3>Application</h3><p class="sub">DebitageHQ version ${esc(version)}. Fermer la fenêtre range l'appli dans la zone de notification (en bas à droite). Pour la quitter, clic droit sur son icône puis « Quitter DebitageHQ ».</p>
 <label class="chk" style="margin-top:10px"><input type="checkbox" data-act="sound"${soundOn ? ' checked' : ''}> Son des notifications (messages et tâches)</label>
 <label class="chk" style="margin-top:8px"><input type="checkbox" data-act="autostart"${autoStart ? ' checked' : ''}> Lancer DebitageHQ au démarrage de Windows</label>
@@ -341,7 +341,7 @@ buildSide();
 const unreadFrom = id => S.dms.filter(d => d.recipient === me && d.sender === id && !d.read_at).length;
 const unreadAll = () => S.dms.filter(d => d.recipient === me && !d.read_at).length;
 const seenText = m => online.has(m.user_id) ? STATUS[statusOf(m.user_id)].l : (m.last_seen ? 'Vu ' + ago(m.last_seen) : 'Hors ligne');
-const avatar = (id, big) => `<span class="av${big ? ' big' : ''}${online.has(id) ? ' on st-' + statusOf(id) : ''}">${esc((nm(id)[0] || '?').toUpperCase())}</span>`;
+const avatar = (id, big) => `<span class="av${big === 'xl' ? ' xl' : big ? ' big' : ''}${online.has(id) ? ' on st-' + statusOf(id) : ''}">${avInner(id)}</span>`;
 function markRead() {
   if (!dmOpen || !dmWith || !document.hasFocus()) return;
   const ids = S.dms.filter(d => d.recipient === me && d.sender === dmWith && !d.read_at).map(d => d.id);
@@ -372,7 +372,7 @@ function renderDM() {
   }
   const m = members.find(x => x.user_id === dmWith) || { user_id: dmWith, name: nm(dmWith) };
   const conv = S.dms.filter(d => (d.sender === dmWith && d.recipient === me) || (d.sender === me && d.recipient === dmWith)).slice().sort((x, y) => ts(x.at) - ts(y.at));
-  box.innerHTML = `<div class="dmhead"><button class="x" data-dm="back" aria-label="Retour">‹</button>${avatar(dmWith, true)}<span class="dmmid"><b>${esc(m.name)}</b><small>${esc(seenText(m))}</small></span><button class="x" data-dm="close" aria-label="Fermer le panneau">×</button></div>
+  box.innerHTML = `<div class="dmhead"><button class="x" data-dm="back" aria-label="Retour">‹</button><button class="profb" data-prof="${esc(dmWith)}" aria-label="Voir le profil de ${esc(m.name)}">${avatar(dmWith, true)}</button><span class="dmmid"><b>${esc(m.name)}</b><small>${esc(seenText(m))}</small></span><button class="x" data-dm="close" aria-label="Fermer le panneau">×</button></div>
 <div class="dmlog" id="dmlog">${conv.map(d => `<div class="dmmsg${d.sender === me ? ' me' : ''}"><div class="dmb">${msgImg(d.img)}${d.body ? `<div class="dmtxt">${rich(d.body)}</div>` : ''}${rxAdd('dm', d.id)}</div>${rxBar('dm', d.id)}<small>${esc(ago(d.at))}${d.sender === me && d.read_at ? ' · lu' : ''}</small></div>`).join('') || `<p class="dmempty">Commence la discussion avec ${esc(m.name)}.</p>`}</div>
 ${imgQueue('dm')}<form class="dmsend" id="dmf">${imgPick('dmimgin')}${codePick('dmtext')}<textarea id="dmtext" rows="2" maxlength="4000" placeholder="Message à ${esc(m.name)}… (tu peux coller une image)" aria-label="Message privé"></textarea><button class="pri" aria-label="Envoyer">Envoyer</button></form>`;
   const ta = $('#dmtext'); ta.value = dmDraft; if (hadFocus) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length) }
@@ -412,7 +412,7 @@ function route() {
 // ---------- Fenêtres de dialogue ----------
 let mSubmit = null;
 function openModal(title, html, onSubmit, ok, onDel) {
-  $('#mcancel').style.display = ''; $('#mtitle').textContent = title; $('#mbody').innerHTML = html; $('#mok').textContent = ok || 'Enregistrer';
+  $('#mcancel').style.display = ''; $('#mcancel').textContent = 'Annuler'; $('#mcancel').onclick = closeModal; $('#mtitle').textContent = title; $('#mbody').innerHTML = html; $('#mok').textContent = ok || 'Enregistrer';
   $('#mok').className = ok === 'Supprimer' ? 'danger' : 'pri'; $('#mdel').innerHTML = onDel ? '<button type="button" class="danger" id="mdelb">Supprimer</button>' : '';
   if (onDel) $('#mdelb').onclick = () => { closeModal(); onDel() };
   mSubmit = onSubmit; $('#modal').hidden = false; const f = $('#mbody').querySelector('input,textarea,select'); (f || $('#mok')).focus();
@@ -522,6 +522,7 @@ async function act(a, id, el) {
     case 'copy': { const f = find('files'); const u = f && fileUrl(f); if (!u) return; try { await navigator.clipboard.writeText(u); toast('Lien copié') } catch { toast('Copie impossible') } return }
     case 'delfile': { const f = find('files'); if (!f) return; return confirmDel(`« ${f.name} »`, async () => { if (f.path && f.kind === 'upload') await sb.storage.from('files').remove([f.path]); return W('files', sb.from('files').delete().eq('id', id)) }) }
     case 'fhist': return fileHistory(id);
+    case 'avdel': return avatarDelete();
     case 'nmode': { const b = $('#nbody'); if (b) noteLive = b.value; noteMode = id; return render() }
     case 'delmsg': { const m = find('messages'); const ok = await W('messages', sb.from('messages').delete().eq('id', id)); if (ok && m && m.img) sb.storage.from('files').remove([m.img]).then(() => {}, () => {}); return ok }
     case 'unimg': pend.chat.splice(+id, 1); return render();
@@ -566,7 +567,7 @@ async function onForm(e) {
       const ok = await sendWithImages(text, imgs, async (body, img) => { const row = { body: body.slice(0, 4000), space: sp }; if (img) row.img = img; const { error } = await sb.from('messages').insert(row); if (error) { toast(sqlHint(error)); return false } reload('messages'); return true });
       if (!ok && text) { const t2 = $('#ctext'); if (t2) { t2.value = text; t2.dataset.dirty = 1 } } return;
     }
-    if (f.id === 'namef') { const n = String(v.name).trim().slice(0, 40); if (!n) return; if (await W('members', sb.from('members').update({ name: n }).eq('user_id', me))) { names[me] = n; toast('Pseudo mis à jour'); loadMembers() } }
+    if (f.id === 'namef') { const n = String(v.name).trim().slice(0, 40); if (!n) return; const body = { name: n }; if (profReady) { body.role = String(v.role || '').trim().slice(0, 40); body.bio = String(v.bio || '').trim().slice(0, 300) } if (await W('members', sb.from('members').update(body).eq('user_id', me))) { names[me] = n; f.querySelectorAll('[data-dirty]').forEach(x => delete x.dataset.dirty); toast(profReady ? 'Profil enregistré' : 'Pseudo mis à jour'); loadMembers() } }
   } finally { if (btn) btn.disabled = false }
 }
 
@@ -575,6 +576,7 @@ main.addEventListener('click', e => { const b = e.target.closest('[data-act]'); 
 main.addEventListener('submit', onForm);
 main.addEventListener('input', e => { const t = e.target; if (t.id && t.type !== 'file' && t.type !== 'password') t.dataset.dirty = 1; if (t.id === 'fq') { fileQ = t.value; render() } if (t.id === 'nq') { noteQ = t.value; render() } });
 main.addEventListener('change', e => { const t = e.target; if (t.id === 'upin' && t.files.length) { const l = [...t.files]; t.value = ''; uploadFiles(l) }
+  if (t.id === 'avin' && t.files.length) { const f0 = t.files[0]; t.value = ''; avatarUpload(f0) }
   if (t.id === 'cimgin' && t.files.length) { const l = [...t.files]; t.value = ''; addImgs('chat', l) }
   if (t.id === 'goin' && t.files.length) { const l = [...t.files]; t.value = ''; const folder = ($('#upFolder') || {}).value || 'Autre'; (async () => { for (const f of l) await goUpload(f, folder) })() } if (t.id === 'ntag' || t.id === 'upFolder') t.dataset.dirty = 1 });
 main.addEventListener('keydown', e => {
@@ -809,6 +811,66 @@ function vRemote() {
 </div>`;
 }
 
+// ---------- Profils des membres ----------
+const ROLES = ['Fondateur', 'Admin', 'Développeur', 'Scripteur', 'Mappeur', 'Graphiste', 'Testeur', 'Modérateur'];
+const okAvPath = p => typeof p === 'string' && /^avatars\/[\w-]+\/[\w.\-]+$/.test(p);
+const memberOf = id => members.find(m => m.user_id === id);
+const avUrl = id => { const m = memberOf(id); return m && okAvPath(m.avatar) && imgs[m.avatar] ? imgs[m.avatar].u : null };
+const avInner = id => { const u = avUrl(id); return u ? `<img src="${esc(u)}" alt="">` : esc((nm(id)[0] || '?').toUpperCase()) };
+async function ensureAvatars() {
+  const now = Date.now();
+  const todo = [...new Set(members.map(m => m.avatar).filter(okAvPath))].filter(p => !(imgs[p] && imgs[p].exp > now + 6e4) && !imgWait.has(p));
+  if (!todo.length || !sb) return; todo.forEach(p => imgWait.add(p));
+  try { const { data } = await sb.storage.from('files').createSignedUrls(todo, 3600); (data || []).forEach(d => { if (d && d.signedUrl && d.path) imgs[d.path] = { u: d.signedUrl, exp: now + 3500e3 } }) } catch {}
+  todo.forEach(p => imgWait.delete(p)); if (phase === 'app') { render(); renderMe() }
+}
+setInterval(() => { if (phase === 'app') ensureAvatars() }, 300000);
+function profileEditor() {
+  const m = memberOf(me) || {};
+  if (!profReady) return `<section class="panel"><h3>Mon pseudo</h3><form id="namef" class="row"><input id="myname" name="name" maxlength="40" value="${esc(names[me] || '')}" required style="flex:1"><button class="pri">Enregistrer</button></form><p class="sub" style="margin-top:10px">Pour ajouter une photo, un rôle et une bio, lance <b>supabase-update-0.5.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l'appli.</p></section>`;
+  return `<section class="panel"><h3>Mon profil</h3>
+<div class="profed"><span class="av xl">${avInner(me)}</span><div class="profbtns"><label class="btn" for="avin" tabindex="0">${m.avatar ? 'Changer la photo' : 'Ajouter une photo'}</label><input type="file" id="avin" accept="image/png,image/jpeg,image/webp,image/gif" hidden>${m.avatar ? '<button class="ghost sm" data-act="avdel">Retirer la photo</button>' : ''}<small class="sub">PNG, JPG ou WebP. Elle est recadrée en carré automatiquement.</small></div></div>
+<form id="namef" class="pform"><label>Pseudo<input id="myname" name="name" maxlength="40" value="${esc(names[me] || '')}" required></label>
+<label>Rôle dans l'équipe<input id="myrole" name="role" maxlength="40" list="qgroles" value="${esc(m.role || '')}" placeholder="Ex. Scripteur, Mappeur…"></label><datalist id="qgroles">${ROLES.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
+<label>Bio<textarea id="mybio" name="bio" rows="3" maxlength="300" placeholder="Quelques mots sur toi : ce que tu fais sur le projet, tes horaires…">${esc(m.bio || '')}</textarea></label>
+<div class="row end"><button class="pri">Enregistrer</button></div></form></section>`;
+}
+async function avatarUpload(file) {
+  if (!profReady) return toast('Lance d’abord supabase-update-0.5.sql dans Supabase.');
+  if (!/^image\//.test(file.type || '')) return toast('Choisis une image (PNG, JPG ou WebP).');
+  if (file.size > 15 * 1048576) return toast('Image trop lourde (15 Mo max).');
+  let blob;
+  try {
+    const bmp = await createImageBitmap(file); const S0 = Math.min(bmp.width, bmp.height), N = 256;
+    const cv = document.createElement('canvas'); cv.width = cv.height = N;
+    cv.getContext('2d').drawImage(bmp, (bmp.width - S0) / 2, (bmp.height - S0) / 2, S0, S0, 0, 0, N, N);
+    blob = await new Promise(r => cv.toBlob(r, 'image/webp', 0.9)); if (!blob) blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  } catch { return toast('Impossible de lire cette image.') }
+  toast('Envoi de la photo…');
+  const old = (memberOf(me) || {}).avatar, path = `avatars/${me}/${crypto.randomUUID()}.${blob.type === 'image/webp' ? 'webp' : 'png'}`;
+  const { error } = await sb.storage.from('files').upload(path, blob, { contentType: blob.type, upsert: false });
+  if (error) return toast('Photo non envoyée : ' + errMsg(error));
+  imgs[path] = { u: URL.createObjectURL(blob), exp: Date.now() + 864e5 };
+  const { error: e2 } = await sb.from('members').update({ avatar: path }).eq('user_id', me);
+  if (e2) { sb.storage.from('files').remove([path]).then(() => {}, () => {}); return toast(sqlHint(e2).replace('0.4', '0.5')) }
+  if (okAvPath(old)) sb.storage.from('files').remove([old]).then(() => {}, () => {});
+  const m = memberOf(me); if (m) m.avatar = path; toast('Photo de profil mise à jour'); render(); renderMe(); renderDM(); loadMembers();
+}
+async function avatarDelete() {
+  const m = memberOf(me); if (!m || !m.avatar) return; const old = m.avatar;
+  if (!await w(sb.from('members').update({ avatar: null }).eq('user_id', me))) return;
+  if (okAvPath(old)) sb.storage.from('files').remove([old]).then(() => {}, () => {});
+  m.avatar = null; toast('Photo retirée'); render(); renderMe(); loadMembers();
+}
+function showProfile(id) {
+  const m = memberOf(id); if (!m) return; closePop();
+  const mine = id === me, on = online.has(id);
+  openModal(mine ? 'Mon profil' : 'Profil', `<div class="prof"><span class="av xxl${on ? ' on st-' + statusOf(id) : ''}">${avInner(id)}</span><b class="pname">${esc(m.name)}</b>${m.role ? `<span class="role">${esc(m.role)}</span>` : ''}<small class="pseen">${on ? `<i class="sd st-${statusOf(id)}"></i>` : ''}${esc(seenText(m))}</small>${m.bio ? `<p class="pbio">${esc(m.bio)}</p>` : `<p class="pbio empty2">${mine ? 'Tu n’as pas encore de bio. Ajoute-la dans Paramètres.' : 'Pas encore de bio.'}</p>`}<small class="sub">Membre depuis le ${esc(new Date(ts(m.joined_at)).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }))}</small></div>`,
+    () => { if (mine) location.hash = 'parametres'; else openDm(id); return true }, mine ? 'Modifier mon profil' : 'Envoyer un message');
+  const c = $('#mcancel'); c.textContent = 'Fermer'; c.onclick = () => { c.textContent = 'Annuler'; c.onclick = closeModal; closeModal() };
+}
+document.addEventListener('click', e => { const p = e.target.closest('[data-prof]'); if (!p) return; e.preventDefault(); showProfile(p.dataset.prof) });
+
 // ---------- Historique des fichiers ----------
 // Les fichiers qui portent le même nom dans un espace sont les versions d'un même fichier.
 const fkey = f => (f.kind === 'upload' || f.kind === 'gofile') ? spOf(f) + '|' + String(f.name || '').trim().toLowerCase() : 'id|' + f.id;
@@ -901,7 +963,7 @@ const bodyOf = d => String((d && d.body) || (d && d.img ? '📷 Image' : ''));
 function renderMe() {
   const box = $('#mebox'); if (!box || phase !== 'app') return;
   const n = names[me] || '', s = statusOf(me);
-  box.innerHTML = `<button class="mebtn" id="mestat" aria-haspopup="menu" aria-label="Changer mon statut"><span class="av on st-${s}">${esc((n[0] || '?').toUpperCase())}</span><span><b>${esc(n || 'Moi')}</b><small>${esc(STATUS[s].l)}</small></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>`;
+  box.innerHTML = `<button class="mebtn" id="mestat" aria-haspopup="menu" aria-label="Changer mon statut"><span class="av on st-${s}">${avInner(me)}</span><span><b>${esc(n || 'Moi')}</b><small>${esc(STATUS[s].l)}</small></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>`;
 }
 function setStatus(s) {
   if (!STATUS[s]) return; myStatus = s; try { localStorage.setItem('qg.status', s) } catch {}
