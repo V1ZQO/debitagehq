@@ -285,3 +285,25 @@ begin
   alter publication supabase_realtime add table public.reactions;
 exception when duplicate_object then null;
 end $$;
+
+-- ---------- Profils (v0.5) ----------
+
+alter table public.members add column if not exists avatar text;
+alter table public.members add column if not exists role text not null default '';
+alter table public.members add column if not exists bio text not null default '';
+
+do $$
+begin
+  alter table public.members add constraint members_avatar_ok check (avatar is null or avatar like 'avatars/%');
+exception when duplicate_object then null;
+end $$;
+do $$
+begin
+  alter table public.members add constraint members_role_ok check (char_length(role) <= 40);
+exception when duplicate_object then null;
+end $$;
+do $$
+begin
+  alter table public.members add constraint members_bio_ok check (char_length(bio) <= 300);
+exception when duplicate_object then null;
+end $$;
