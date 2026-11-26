@@ -228,7 +228,7 @@ ${list.length ? `<div class="tbl">${list.map(fileCard).join('')}</div>` : `<p cl
 }
 function card(t, i) {
   const id = esc(t.id);
-  return `<article class="task${t.prio === 'Haute' ? ' hi' : ''}"><button class="tt" data-act="edittask" data-id="${id}">${esc(t.title || 'Sans titre')}</button>
+  return `<article class="task${t.prio === 'Haute' ? ' hi' : ''}"><div class="thead"><button class="tt" data-act="edittask" data-id="${id}">${esc(t.title || 'Sans titre')}</button><button class="tdel" data-act="deltask" data-id="${id}" aria-label="Supprimer la tâche" title="Supprimer la tâche"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button></div>
 ${t.descr ? `<p>${esc(String(t.descr).slice(0, 140))}</p>` : ''}
 <div class="meta"><span class="tag">${esc(t.tag || 'Autre')}</span>${t.prio === 'Haute' ? '<span class="hot">Urgent</span>' : ''}<span>${t.assignee ? esc(nm(t.assignee)) : 'Personne'}</span></div>
 <div class="mv">${i > 0 ? `<button class="sm" data-act="mv" data-id="${id}" data-to="${ST[i - 1][0]}" aria-label="Revenir à ${ST[i - 1][1]}">←</button>` : ''}${i < 2 ? `<button class="sm" data-act="mv" data-id="${id}" data-to="${ST[i + 1][0]}">${i === 0 ? 'Commencer' : 'Terminer'} →</button>` : ''}</div></article>`
@@ -500,6 +500,7 @@ async function act(a, id, el) {
     case 'tmine': taskMine = el.checked; return render();
     case 'selnote': noteSel = id; return render(true);
     case 'edittask': return taskForm(find('tasks'));
+    case 'deltask': { const tk = find('tasks'); if (!tk) return; return confirmDel(`la tâche « ${tk.title || 'Sans titre'} »`, () => W('tasks', sb.from('tasks').delete().eq('id', id))) }
     case 'newtask': return taskForm(null);
     case 'mv': return W('tasks', sb.from('tasks').update({ status: el.dataset.to, upd: new Date().toISOString() }).eq('id', id));
     case 'newev': return evForm(null);

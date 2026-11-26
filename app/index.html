@@ -197,6 +197,11 @@ aside.nl li b{display:block;font-weight:600;overflow:hidden;text-overflow:ellips
 .spin{width:34px;height:34px;border-radius:50%;border:3px solid #2a2a30;border-top-color:var(--red);animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .rchost{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border-color:#5a1b21}
 .mem .row{gap:6px}
+/* suppression rapide des tâches */
+.thead{display:flex;align-items:flex-start;gap:6px}.thead .tt{flex:1}
+.tdel{flex:none;width:30px;height:30px;margin:-6px -6px 0 0;padding:0;border:0;border-radius:7px;background:transparent;color:var(--mute);display:grid;place-items:center;opacity:.55}
+.tdel svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.task:hover .tdel{opacity:1}.tdel:hover{background:#2a1215;color:#ff6b72;border:0}.tdel:focus-visible{opacity:1}
 /* barres de recherche : croix bien large */
 .srch{position:relative;flex:0 1 260px;min-width:180px}.srch input{width:100%;padding-right:40px}
 .notes .srch{flex:none;max-width:none}
