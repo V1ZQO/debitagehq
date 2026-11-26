@@ -312,6 +312,8 @@ code.ic{font:12px Consolas,ui-monospace,monospace;background:rgba(255,255,255,.0
 .hrow.cur{border-color:#2f47b8;background:#12162b}.hrow .dmmid{flex:1}
 .hv{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;background:var(--field);border:1px solid var(--line2);font-size:12px}
 .hrow.cur .hv{background:#1c2b6e;border-color:#2f47b8;color:#fff}
+/* 0.4.7 : les menus flottants doivent recevoir les clics même au-dessus de la zone de déplacement de la fenêtre */
+.pop,.pop *,#lbox,#lbox *,.mebtn{-webkit-app-region:no-drag !important}
 </style>
 </head>
 <body>
