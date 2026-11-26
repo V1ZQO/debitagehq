@@ -598,6 +598,16 @@ function showUpdate(v) {
   updVersion = v; const box = $('#updbox'); if (!box) return;
   box.innerHTML = v ? `<div class="upd"><span><b>Mise à jour ${esc(v)}</b> prête à installer.</span><button class="pri" id="updbtn">Redémarrer</button></div>` : '';
   const b = $('#updbtn'); if (b) b.onclick = () => QG.installUpdate();
+  if (v) updPopup(v);
+}
+// Fenêtre qui prévient qu'une nouvelle version est sortie (une seule fois par version)
+let updShown = null;
+function updPopup(v) {
+  if (updShown === v) return;
+  if (phase !== 'app' || !$('#modal').hidden) return setTimeout(() => updPopup(v), 5000);
+  updShown = v; ping('task');
+  openModal('Nouvelle mise à jour 🎉', `<p>La version <b>${esc(v)}</b> de DebitageHQ vient de sortir. Elle est déjà téléchargée.</p><p class="sub">Redémarre maintenant pour l'avoir tout de suite. Sinon, elle s'installera toute seule la prochaine fois que tu quitteras l'appli.</p>`, () => { QG.installUpdate(); return true }, 'Redémarrer maintenant');
+  const c = $('#mcancel'); c.textContent = 'Plus tard'; c.onclick = () => { c.textContent = 'Annuler'; c.onclick = closeModal; closeModal() };
 }
 QG.onUpdate(showUpdate);
 QG.updateStatus().then(v => { if (v) showUpdate(v) }).catch(() => {});
