@@ -1,7 +1,7 @@
 {
   "name": "debitagehq",
   "productName": "DebitageHQ",
-  "version": "1.2.0",
+  "version": "0.1.0",
   "description": "Espace privé de l'équipe DebitageHQ",
   "main": "main.js",
   "author": "Equipe QG",
@@ -17,8 +17,14 @@
     "files": [
       "main.js",
       "preload.js",
+      "splash-preload.js",
+      "banner-preload.js",
       "app/**/*",
-      "!app/fonts/**"
+      "!app/fonts/**",
+      "!node_modules/koffi/build/koffi/!(win32_x64)/**",
+      "!node_modules/koffi/src/**",
+      "!node_modules/koffi/vendor/**",
+      "!node_modules/koffi/doc/**"
     ],
     "directories": {
       "output": "dist",
@@ -60,15 +66,19 @@
         "repo": "debitagehq",
         "releaseType": "release"
       }
+    ],
+    "asarUnpack": [
+      "node_modules/koffi/**"
     ]
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.119.2",
     "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
-    "@supabase/supabase-js": "^2.119.2"
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
-    "electron-updater": "^6.8.11"
+    "electron-updater": "^6.8.11",
+    "koffi": "^2.16.4"
   },
   "repository": {
     "type": "git",

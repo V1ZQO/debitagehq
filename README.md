@@ -1,6 +1,7 @@
 # DebitageHQ
 
 L'application privée de l'équipe : fichiers, tâches, planning, notes et discussion, sur un serveur Supabase.
+Les fichiers de plus de 50 Mo sont envoyés sur Gofile (lien visible seulement dans l'appli).
 
 ## Installer l'application
 
@@ -12,11 +13,10 @@ Windows peut afficher « Windows a protégé votre ordinateur » à la première
 
 1. Modifie le code (directement sur GitHub ou sur ton PC).
 2. Ouvre `package.json` et augmente le numéro de version, par exemple `"version": "1.2.0"` → `"version": "1.3.0"`.
-3. Enregistre (Commit) sur la branche `main`.
+3. Enregistre (Commit) sur la branche `main`. Rien n'est publié à ce stade.
+4. Quand tu es prêt, onglet **Actions** > **Publier une mise à jour** > **Run workflow**.
 
-C'est tout. GitHub construit l'installateur sur une machine Windows (onglet **Actions**, environ 5 minutes) et le publie dans **Releases**. Toutes les applis de l'équipe le téléchargent dans l'heure et proposent « Redémarrer ».
-
-Pour relancer une publication à la main : onglet **Actions** > **Publier une mise à jour** > **Run workflow**. Si le numéro de version existe déjà, rien n'est publié : change d'abord le numéro.
+GitHub construit alors l'installateur sur une machine Windows (quelques minutes) et le publie dans **Releases**. Toutes les applis de l'équipe le téléchargent dans l'heure et proposent « Redémarrer ». Si le numéro de version existe déjà, rien n'est publié : change d'abord le numéro.
 
 ## Fichiers
 
