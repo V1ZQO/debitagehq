@@ -33,7 +33,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 900, minHeight: 600,
     title: 'DebitageHQ', icon: ICON, backgroundColor: '#1e1e1e', autoHideMenuBar: true, show: false, frame: false, roundedCorners: true,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true, autoplayPolicy: 'no-user-gesture-required', backgroundThrottling: false }
   });
   win.removeMenu();
   win.loadFile(path.join(__dirname, 'app', 'index.html'));
@@ -94,7 +94,7 @@ function createTray() {
 
 ipcMain.handle('notify', (_e, { title, body, view }) => {
   if (!Notification.isSupported()) return false;
-  const n = new Notification({ title: String(title || 'DebitageHQ').slice(0, 80), body: String(body || '').slice(0, 300), icon: ICON });
+  const n = new Notification({ title: String(title || 'DebitageHQ').slice(0, 80), body: String(body || '').slice(0, 300), icon: ICON, silent: true }); // le son est joué par l'appli
   n.on('click', () => goTo(typeof view === 'string' ? view : 'accueil'));
   n.show();
   if (win && !win.isFocused()) win.flashFrame(true);

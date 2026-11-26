@@ -7,15 +7,16 @@ const QG = window.qg || { rcCapture: async () => true, rcSession: async () => tr
 // ---------- État ----------
 const CFG_KEY = 'qg.config';
 let cfg = loadCfg(), sb = null, me = null, phase = 'boot', authTab = 'login', authMsg = '';
-const S = { files: [], tasks: [], events: [], notes: [], messages: [], dms: [] };
+const S = { files: [], tasks: [], events: [], notes: [], messages: [], dms: [], notifications: [] };
+let notifReady = true, soundOn = (() => { try { return localStorage.getItem('qg.sound') !== '0' } catch { return true } })();
 let autoStart = true, online = new Set(), pres = null, dmReady = true, dmOpen = (() => { try { return localStorage.getItem('qg.dm') !== '0' } catch { return true } })(), dmWith = null, dmDraft = '';
 let members = []; const names = {}; const thumbs = {};
-const VIEWS = ['accueil', 'fichiers', 'taches', 'planning', 'notes', 'discussion', 'equipe', 'remote', 'parametres'];
+const VIEWS = ['accueil', 'fichiers', 'taches', 'planning', 'notes', 'discussion', 'equipe', 'remote', 'parametres', 'notifications'];
 const SPACES = { serveur: { label: 'Serveur GTA 6', sub: 'Développement' }, cheat: { label: 'Cheat', sub: 'Projet cheat' } };
 let space = 'serveur', spaceReady = true;
 const spOf = r => (r && r.space) || 'serveur';
 const SP = t => S[t].filter(r => spOf(r) === space);   // données de l'espace affiché
-const GLOBAL = ['equipe', 'remote', 'parametres'];
+const GLOBAL = ['equipe', 'remote', 'parametres', 'notifications'];
 const hrefOf = v => GLOBAL.includes(v) ? '#' + v : `#${space}-${v}`;
 let view = 'accueil', fileFolder = 'Tous', fileQ = '', noteQ = '', taskMine = false, noteSel = null, uploading = [], version = '';
 // Catégories propres à chaque espace
@@ -114,9 +115,10 @@ const QUERIES = {
   events: () => sb.from('events').select('*').order('ev_date', { ascending: true }).limit(300),
   notes: () => sb.from('notes').select('*').order('upd', { ascending: false }).limit(500),
   messages: () => sb.from('messages').select('*').order('at', { ascending: false }).limit(150),
-  dms: () => sb.from('dms').select('*').order('at', { ascending: false }).limit(1000)
+  dms: () => sb.from('dms').select('*').order('at', { ascending: false }).limit(1000),
+  notifications: () => sb.from('notifications').select('*').order('at', { ascending: false }).limit(200)
 };
-async function loadTable(t) { const { data, error } = await QUERIES[t]();  if (t === 'dms') dmReady = !error; if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'dms') markRead(); render() } }
+async function loadTable(t) { const { data, error } = await QUERIES[t](); if (t === 'dms') dmReady = !error; if (t === 'notifications') notifReady = !error; if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'dms') markRead(); render() } }
 async function loadMembers() { let { data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen').order('name'); if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at').order('name')); if (!error) { members = data || []; members.forEach(m => names[m.user_id] = m.name); render() } }
 const timers = {};
 function reload(t) { clearTimeout(timers[t]); timers[t] = setTimeout(() => t === 'members' ? loadMembers() : S[t] && loadTable(t), 250) }
@@ -141,14 +143,24 @@ async function onInsert(t, d) {
     if (!d || d.recipient !== me) return;
     const focused = await QG.isFocused();
     if (focused && dmOpen && dmWith === d.sender) return;
-    if (!focused || !dmOpen || dmWith !== d.sender) QG.notify('Message privé de ' + nm(d.sender), String(d.body || ''), 'dm:' + d.sender);
+    ping('msg');
+    QG.notify('Message privé de ' + nm(d.sender), String(d.body || ''), 'dm:' + d.sender);
     return;
+  }
+  if (t === 'notifications') {
+    if (!d || d.recipient !== me) return;
+    ping('task');
+    QG.notify(`${nm(d.actor)} t'a assigné une tâche`, String(d.title || ''), 'notifications');
+    return;
+  }
+  if (t === 'messages' && d && d.author !== me) {
+    const focused = await QG.isFocused();
+    if (!(focused && view === 'discussion' && space === spOf(d))) ping('msg');
   }
   if (!d || d.author === me || await QG.isFocused()) return;
   const sv = v => `${spOf(d)}-${v}`, tag = spOf(d) === 'cheat' ? '[Cheat] ' : '[Serveur] ';
   if (t === 'messages') QG.notify(tag + nm(d.author), String(d.body || ''), sv('discussion'));
   else if (t === 'files') QG.notify(tag + 'Nouveau fichier', `${nm(d.author)} a partagé « ${String(d.name || '')} »`, sv('fichiers'));
-  else if (t === 'tasks' && d.assignee === me) QG.notify(tag + 'Nouvelle tâche pour toi', String(d.title || ''), sv('taches'));
   else if (t === 'events') QG.notify(tag + 'Nouveau rendez-vous', `${String(d.title || '')}, ${fmtDate(d.ev_date).w}`, sv('planning'));
 }
 async function refreshThumbs() {
@@ -211,7 +223,7 @@ function vFiles() {
   return `<div class="bar"><div><h2>Fichiers</h2><p class="sub">${esc(C().filesSub)}</p></div><div class="row"><select id="upFolder" aria-label="Dossier où envoyer" style="width:auto">${opts(C().folders, C().folders[0])}</select><label class="btn pri" for="upin" tabindex="0">Envoyer des fichiers</label><input type="file" id="upin" multiple hidden><label class="btn" for="goin" tabindex="0">Gros fichier (Gofile)</label><input type="file" id="goin" multiple hidden><button data-act="newlink">Ajouter un lien</button></div></div>
 <p class="hint">Glisse tes fichiers ici ou utilise le bouton. Jusqu'à 50 Mo, les fichiers restent privés dans l'équipe. Au-delà, ils partent automatiquement sur Gofile (taille illimitée) : le lien n'est visible que dans l'appli, mais toute personne qui l'a peut télécharger, et Gofile supprime les fichiers restés plusieurs semaines sans téléchargement.</p>
 ${uploading.length ? `<p class="up">Envoi en cours : ${uploading.map(u => esc(u.name) + (u.via ? ' vers ' + u.via : '') + (u.pct != null ? ` (${u.pct} %)` : '')).join(', ')}</p>` : ''}
-<div class="row"><input id="fq" type="search" placeholder="Rechercher un fichier" value="${esc(fileQ)}" aria-label="Rechercher un fichier"><div class="chips">${['Tous', ...C().folders].map(f => `<button class="chip${f === fileFolder ? ' on' : ''}" data-act="folder" data-id="${esc(f)}">${esc(f)}</button>`).join('')}</div></div>
+<div class="row"><div class="srch"><input id="fq" type="search" placeholder="Rechercher un fichier" value="${esc(fileQ)}" aria-label="Rechercher un fichier">${fileQ ? '<button class="clr" data-act="clrq" data-id="fq" aria-label="Effacer la recherche">×</button>' : ''}</div><div class="chips">${['Tous', ...C().folders].map(f => `<button class="chip${f === fileFolder ? ' on' : ''}" data-act="folder" data-id="${esc(f)}">${esc(f)}</button>`).join('')}</div></div>
 ${list.length ? `<div class="tbl">${list.map(fileCard).join('')}</div>` : `<p class="empty">${SP('files').length ? 'Aucun fichier ne correspond.' : 'Aucun fichier pour l’instant. Envoie le premier !'}</p>`}`
 }
 function card(t, i) {
@@ -248,7 +260,7 @@ function editor(n) {
 function vNotes() {
   const q = noteQ.toLowerCase(); const list = SP('notes').filter(n => !q || String(n.title || '').toLowerCase().includes(q) || String(n.body || '').toLowerCase().includes(q)); const n = SP('notes').find(x => x.id === noteSel);
   return `<div class="bar"><div><h2>Notes &amp; docs</h2><p class="sub">${esc(C().notesSub)}</p></div><button class="pri" data-act="newnote">Nouvelle note</button></div>
-<div class="notes"><aside class="nl"><input id="nq" type="search" placeholder="Chercher dans les notes" value="${esc(noteQ)}" aria-label="Chercher dans les notes">
+<div class="notes"><aside class="nl"><div class="srch"><input id="nq" type="search" placeholder="Chercher dans les notes" value="${esc(noteQ)}" aria-label="Chercher dans les notes">${noteQ ? '<button class="clr" data-act="clrq" data-id="nq" aria-label="Effacer la recherche">×</button>' : ''}</div>
 <ul>${list.map(x => `<li><button data-act="selnote" data-id="${esc(x.id)}" class="${x.id === noteSel ? 'on' : ''}"><b>${esc(x.title || 'Sans titre')}</b><span>${esc(x.tag || '')} · ${esc(ago(x.upd))}</span></button></li>`).join('') || '<li class="empty">Aucune note.</li>'}</ul></aside>
 <div class="editor">${n ? editor(n) : `<p class="empty">Choisis une note ou crée-en une : ${esc(C().notesHint)}…</p>`}</div></div>`
 }
@@ -272,23 +284,25 @@ function vSettings() {
 <p class="sub" style="margin-top:10px">Garde ce code dans l'équipe : n'importe qui qui l'a peut rejoindre DebitageHQ.</p></section>
 <section class="panel"><h3>Mon pseudo</h3><form id="namef" class="row"><input id="myname" name="name" maxlength="40" value="${esc(names[me] || '')}" required style="flex:1"><button class="pri">Enregistrer</button></form></section>
 <section class="panel"><h3>Application</h3><p class="sub">DebitageHQ version ${esc(version)}. Fermer la fenêtre range l'appli dans la zone de notification (en bas à droite). Pour la quitter, clic droit sur son icône puis « Quitter DebitageHQ ».</p>
-<label class="chk" style="margin-top:10px"><input type="checkbox" data-act="autostart"${autoStart ? ' checked' : ''}> Lancer DebitageHQ au démarrage de Windows</label>
+<label class="chk" style="margin-top:10px"><input type="checkbox" data-act="sound"${soundOn ? ' checked' : ''}> Son des notifications (messages et tâches)</label>
+<label class="chk" style="margin-top:8px"><input type="checkbox" data-act="autostart"${autoStart ? ' checked' : ''}> Lancer DebitageHQ au démarrage de Windows</label>
 <div class="row" style="margin-top:10px"><button data-act="checkupd">Rechercher une mise à jour</button><button class="danger" data-act="resetcfg">Quitter cette équipe sur ce PC</button></div></section>
 </div>`
 }
 
-const V = { accueil: vHome, fichiers: vFiles, taches: vTasks, planning: vPlan, notes: vNotes, discussion: vChat, equipe: vTeam, remote: vRemote, parametres: vSettings };
+const V = { accueil: vHome, fichiers: vFiles, taches: vTasks, planning: vPlan, notes: vNotes, discussion: vChat, equipe: vTeam, remote: vRemote, parametres: vSettings, notifications: vNotifs };
 function render(fresh) {
   const main = $('#main'); const a = document.activeElement; const keep = {};
   if (!fresh) main.querySelectorAll('[data-dirty]').forEach(el => { if (el.id) keep[el.id] = el.value });
   const fid = !fresh && a && main.contains(a) && a.id ? a.id : null; let s0 = null, s1 = null; try { s0 = a.selectionStart; s1 = a.selectionEnd } catch {}
   const ch = $('#chatlog'); const atBot = !ch || ch.scrollHeight - ch.scrollTop - ch.clientHeight < 80;
   $('#shell').classList.toggle('gate-mode', phase !== 'app');
-  if (phase === 'app') { const n = names[me] || ''; $('#mebox').innerHTML = `<div class="av">${esc((n[0] || '?').toUpperCase())}</div><span><b>${esc(n || 'Moi')}</b><small>Membre de l'équipe</small></span>`; const T = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion', equipe: 'Équipe' }; $('#pgtitle').textContent = view === 'equipe' ? 'Équipe' : view === 'remote' ? 'Contrôle à distance' : view === 'parametres' ? 'Paramètres' : `${SPACES[space].label}  ·  ${T[view] || ''}` }
+  if (phase === 'app') { const n = names[me] || ''; $('#mebox').innerHTML = `<div class="av">${esc((n[0] || '?').toUpperCase())}</div><span><b>${esc(n || 'Moi')}</b><small>Membre de l'équipe</small></span>`; const T = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion', equipe: 'Équipe' }; $('#pgtitle').textContent = view === 'equipe' ? 'Équipe' : view === 'remote' ? 'Contrôle à distance' : view === 'parametres' ? 'Paramètres' : view === 'notifications' ? 'Notifications' : `${SPACES[space].label}  ·  ${T[view] || ''}` }
   main.innerHTML = phase === 'setup' ? vSetup() : phase === 'auth' ? vAuth() : phase === 'app' ? ((!spaceReady && !GLOBAL.includes(view) ? `<div class="notice" style="margin-bottom:14px">Pour séparer Serveur GTA 6 et Cheat, lance le fichier <b>supabase-update-0.2.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l'appli. En attendant, tu ne peux rien ajouter.</div>` : '') + V[view]()) : '<p class="empty">Connexion…</p>';
   for (const k in keep) { const el = document.getElementById(k); if (el) { try { el.value = keep[k]; el.dataset.dirty = 1 } catch {} } }
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus({ preventScroll: true }); try { if (s0 != null) el.setSelectionRange(s0, s1) } catch {} } }
   const c = $('#chatlog'); if (c && atBot) c.scrollTop = c.scrollHeight;
+  updateNotifBadge();
   const slot = $('#rcslot'); if (slot) { slot.appendChild(rcVideo); if (rcVideo.srcObject) rcVideo.play().catch(() => {}) }
   renderDM();
 }
@@ -301,6 +315,7 @@ const ICONS = {
   notes: '<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>',
   discussion: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
   equipe: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
+  notifications: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   parametres: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   remote: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m10 9 4 2.5-4 2.5z"/>',
   serveur: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
@@ -314,7 +329,7 @@ function buildSide() {
   nav.innerHTML = Object.entries(SPACES).map(([id, s]) => { let closed = false; try { closed = localStorage.getItem('qg.grp.' + id) === '0' } catch {}
     return `<div class="grp g-${id}${closed ? ' closed' : ''}" data-g="${id}"><button class="gh" data-grp="${id}" aria-expanded="${!closed}">${svg(ICONS[id])}<span><b>${s.label}</b><small>${s.sub}</small></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
 <nav class="gl" aria-label="${s.label}">${Object.entries(LABELS).map(([v, l]) => `<a href="#${id}-${v}">${svg(ICONS[v])}<span>${l}</span></a>`).join('')}</nav></div>` }).join('')
-    + `<div class="slabel">Général</div><nav aria-label="Général"><a href="#remote">${svg(ICONS.remote)}<span>Contrôle à distance</span></a><a href="#equipe">${svg(ICONS.equipe)}<span>Équipe</span></a><a href="#parametres">${svg(ICONS.parametres)}<span>Paramètres</span></a></nav>`;
+    + `<div class="slabel">Général</div><nav aria-label="Général"><a href="#remote">${svg(ICONS.remote)}<span>Contrôle à distance</span></a><a href="#notifications">${svg(ICONS.notifications)}<span>Notifications</span><b class="badge nbadge" id="nbadge" hidden></b></a><a href="#equipe">${svg(ICONS.equipe)}<span>Équipe</span></a><a href="#parametres">${svg(ICONS.parametres)}<span>Paramètres</span></a></nav>`;
   nav.addEventListener('click', e => { const b = e.target.closest('[data-grp]'); if (b) { e.preventDefault(); toggleGrp(b.dataset.grp) } });
 }
 buildSide();
@@ -414,7 +429,8 @@ function taskForm(t) {
 <div class="two"><label>Catégorie<select name="tag">${opts(t && t.tag && !C().ttags.includes(t.tag) ? [t.tag, ...C().ttags] : C().ttags, t ? t.tag : C().ttags[0])}</select></label><label>Priorité<select name="prio">${opts(['Basse', 'Normale', 'Haute'], t && t.prio || 'Normale')}</select></label></div>
 <div class="two"><label>Assignée à<select name="assignee">${memberOpts(t ? t.assignee : me)}</select></label><label>Statut<select name="status">${ST.map(([k, l]) => `<option value="${k}"${(t && t.status || 'todo') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label></div>`,
     v => { const body = { title: v.title.trim().slice(0, 140), descr: v.descr || '', tag: v.tag, prio: v.prio, assignee: v.assignee || null, status: v.status, upd: new Date().toISOString() };
-      return t ? W('tasks', sb.from('tasks').update(body).eq('id', t.id)) : W('tasks', sb.from('tasks').insert({ ...body, space })) }, 'Enregistrer',
+      if (t) return W('tasks', sb.from('tasks').update(body).eq('id', t.id)).then(ok => { if (ok) notifyAssign({ ...t, ...body }, t.assignee); return ok });
+      return (async () => { const { data, error } = await sb.from('tasks').insert({ ...body, space }).select().single(); if (error) { toast(errMsg(error)); return false } reload('tasks'); notifyAssign(data, null); return true })() }, 'Enregistrer',
     t ? () => confirmDel('cette tâche', () => W('tasks', sb.from('tasks').delete().eq('id', t.id))) : null);
 }
 function evForm(e) {
@@ -479,6 +495,7 @@ async function act(a, id, el) {
     case 'atab': authTab = id; authMsg = ''; return render(true);
     case 'resetcfg': return openModal('Changer de code ?', "<p>Tu vas être déconnecté de cette équipe sur ce PC. Les données de l'équipe ne sont pas supprimées.</p>", async () => { try { await sb?.auth.signOut() } catch {} saveCfg(null); location.hash = ''; location.reload() }, 'Continuer');
     case 'logout': await sb.auth.signOut(); phase = 'auth'; return render(true);
+    case 'clrq': if (id === 'fq') fileQ = ''; else noteQ = ''; render(true); { const i = $('#' + id); if (i) i.focus() } return;
     case 'folder': fileFolder = id; return render();
     case 'tmine': taskMine = el.checked; return render();
     case 'selnote': noteSel = id; return render(true);
@@ -498,6 +515,9 @@ async function act(a, id, el) {
     case 'delmsg': return W('messages', sb.from('messages').delete().eq('id', id));
     case 'checkupd': if (updVersion) return QG.installUpdate(); { const ok = await QG.checkUpdates(); return toast(ok ? 'Recherche en cours. Si une nouvelle version existe, elle se télécharge en arrière-plan.' : 'Les mises à jour ne sont pas disponibles dans cette version de test.') }
     case 'dmto': return openDm(id);
+    case 'nreadall': return markAllNotifs();
+    case 'nopen': { const n = S.notifications.find(x => x.id === id); if (!n) return; if (!n.read_at) { n.read_at = new Date().toISOString(); sb.from('notifications').update({ read_at: n.read_at }).eq('id', id).then(() => {}, () => {}) } location.hash = `${spOf(n)}-taches`; const tk = S.tasks.find(x => x.id === n.ref); if (tk) setTimeout(() => taskForm(tk), 150); else toast('Cette tâche a été supprimée.'); return }
+    case 'sound': soundOn = el.checked; try { localStorage.setItem('qg.sound', soundOn ? '1' : '0') } catch {} if (soundOn) ping('msg'); return;
     case 'rcview': return rcRequest(id, false);
     case 'rcctl': return rcRequest(id, true);
     case 'rcstop': return rcEnd(true);
@@ -565,6 +585,45 @@ function showUpdate(v) {
 }
 QG.onUpdate(showUpdate);
 QG.updateStatus().then(v => { if (v) showUpdate(v) }).catch(() => {});
+
+// ---------- Son et notifications ----------
+let actx = null;
+function ping(kind) {
+  if (!soundOn) return;
+  try {
+    actx = actx || new AudioContext();
+    if (actx.state === 'suspended') actx.resume();
+    const t = actx.currentTime, notes = kind === 'task' ? [[660, 0], [880, 0.1], [1175, 0.2]] : [[880, 0], [1320, 0.09]];
+    for (const [f, d] of notes) {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0, t + d); g.gain.linearRampToValueAtTime(0.16, t + d + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.38);
+      o.connect(g).connect(actx.destination); o.start(t + d); o.stop(t + d + 0.42);
+    }
+  } catch {}
+}
+const myNotifs = () => S.notifications.filter(n => n.recipient === me);
+const unreadNotifs = () => myNotifs().filter(n => !n.read_at).length;
+function updateNotifBadge() { const b = $('#nbadge'); if (!b) return; const n = phase === 'app' ? unreadNotifs() : 0; b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n) }
+async function notifyAssign(task, prevAssignee) {
+  // prévient la personne qui reçoit une tâche (sauf si c'est soi-même)
+  if (!task || !task.assignee || task.assignee === me || task.assignee === prevAssignee || !notifReady) return;
+  const { error } = await sb.from('notifications').insert({ recipient: task.assignee, actor: me, kind: 'task', space: spOf(task), ref: task.id || null, title: String(task.title || '').slice(0, 200) });
+  if (error && /relation|does not exist|schema cache/i.test(error.message || '')) notifReady = false;
+}
+function markAllNotifs() {
+  const ids = myNotifs().filter(n => !n.read_at).map(n => n.id); if (!ids.length) return;
+  const now = new Date().toISOString(); S.notifications.forEach(n => { if (ids.includes(n.id)) n.read_at = now });
+  sb.from('notifications').update({ read_at: now }).in('id', ids).then(() => {}, () => {}); render();
+}
+function vNotifs() {
+  const list = myNotifs();
+  const head = `<div class="bar"><div><h2>Notifications</h2><p class="sub">Les tâches qu'on t'assigne.</p></div>${list.some(n => !n.read_at) ? '<button data-act="nreadall">Tout marquer comme lu</button>' : ''}</div>`;
+  if (!notifReady) return head + `<div class="notice">Les notifications ont besoin d'une petite mise à jour du serveur : lance le fichier <b>supabase-update-0.3.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l'appli.</div>`;
+  if (!list.length) return head + '<p class="empty">Aucune notification pour l’instant. Quand quelqu’un t’assigne une tâche, elle apparaît ici.</p>';
+  return head + `<div class="tbl">${list.map(n => { const sp = spOf(n), t = S.tasks.find(x => x.id === n.ref);
+    return `<button class="nrow${n.read_at ? '' : ' unread'}" data-act="nopen" data-id="${esc(n.id)}">${avatar(n.actor)}<span class="dmmid"><b>${esc(nm(n.actor))} t'a assigné « ${esc(n.title || (t && t.title) || 'une tâche')} »</b><small>${esc(SPACES[sp] ? SPACES[sp].label : '')} · ${esc(ago(n.at))}${t ? ' · ' + esc((ST.find(s => s[0] === t.status) || ST[0])[1]) : ''}</small></span>${n.read_at ? '' : '<i class="ndot"></i>'}</button>` }).join('')}</div>`;
+}
 
 // ---------- Contrôle à distance ----------
 // La mise en relation passe par Supabase ; l'image et les commandes passent directement d'un PC à l'autre (WebRTC).
