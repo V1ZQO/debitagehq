@@ -275,7 +275,7 @@ function setupUpdates() {
   ipcMain.handle('check-updates', () => { check(); return true; });
   ipcMain.handle('update-status', () => updateReady);
   check();
-  setInterval(check, 60 * 60 * 1000);
+  setInterval(check, 10 * 60 * 1000); // vérifie toutes les 10 minutes
 }
 if (!app.isPackaged) {
   ipcMain.handle('install-update', () => false);
