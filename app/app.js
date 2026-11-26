@@ -350,7 +350,8 @@ const TABS = { accueil: 'Accueil', taches: 'Tâches', fichiers: 'Fichiers', plan
 function buildSide() {
   const g = GLOBAL.includes(view), cur = g ? 'accueil' : view;
   $('#spaceseg').innerHTML = Object.entries(SPACES).map(([id, s]) => `<a role="tab" class="ss-${id}" href="#${id}-${cur}" aria-selected="${!g && space === id}">${esc(s.label)}</a>`).join('');
-  $('#tabs').innerHTML = Object.entries(TABS).map(([v, l]) => `<a href="#${space}-${v}"${!g && view === v ? ' aria-current="page"' : ''}>${l}</a>`).join('');
+  $('#tabs').innerHTML = Object.entries(TABS).map(([v, l]) => `<a href="#${space}-${v}"${!g && view === v ? ' aria-current="page"' : ''}>${l}</a>`).join('')
+    + `<span class="tabsep" aria-hidden="true"></span><a href="#remote" class="tabg" aria-label="Contrôle à distance" title="Contrôle à distance"${view === 'remote' ? ' aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="tl">Contrôle à distance</span></a>`;
   const b = $('#nbell'); if (b) { b.hidden = phase !== 'app'; b.classList.toggle('on', view === 'notifications') }
 }
 

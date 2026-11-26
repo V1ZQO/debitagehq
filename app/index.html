@@ -537,6 +537,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--acc)}
 /* ---- Fenêtres ---- */
 #modal{background:rgba(5,5,7,.7)}
 #mtitle{font-size:16px;font-weight:600}
+.tabsep{flex:none;width:1px;height:18px;align-self:center;background:var(--line2)}
+.tabs a.tabg{gap:7px}.tabs a.tabg svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabs a.tabg[aria-current=page]{border-bottom-color:#e0262f}
+.shell.dm-open .hqbrand b{display:none}.shell.dm-open .tabs a.tabg .tl{display:none}.shell.dm-open .tabs{gap:14px}.shell.dm-open .topbar.hq{gap:14px}
+@media(max-width:1280px){.tabs a.tabg .tl{display:none}}
 /* 0.4.7 : les menus flottants doivent recevoir les clics même au-dessus de la zone de déplacement de la fenêtre */
 .pop,.pop *,#lbox,#lbox *,.mebtn{-webkit-app-region:no-drag !important}
 /* ---- 0.5.0 : profils ---- */
