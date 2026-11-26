@@ -312,6 +312,39 @@ code.ic{font:12px Consolas,ui-monospace,monospace;background:rgba(255,255,255,.0
 .hrow.cur{border-color:#2f47b8;background:#12162b}.hrow .dmmid{flex:1}
 .hv{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;background:var(--field);border:1px solid var(--line2);font-size:12px}
 .hrow.cur .hv{background:#1c2b6e;border-color:#2f47b8;color:#fff}
+/* ---- 0.5.2 : notes de tâche ---- */
+.tnc{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;margin-left:auto;border-radius:10px;background:var(--field);border:1px solid var(--line2);color:var(--mute);font-size:11px}
+.tnc svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round}.tnc:hover{color:var(--ink)}
+.tnotes{margin-top:6px;padding-top:14px;border-top:1px solid var(--line);display:grid;gap:10px}
+.tnh{font-size:12px;font-weight:600;color:var(--ink)}.tnh span{color:var(--mute);font-weight:400;margin-left:4px}
+.tnlist{display:grid;gap:10px;max-height:240px;overflow-y:auto;padding-right:4px}
+.tn{display:flex;gap:9px;align-items:flex-start}.tn .av{width:26px;height:26px;font-size:11px}.tn .av::after{display:none}
+.tnb{flex:1;min-width:0;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
+.tnm{display:flex;align-items:center;gap:8px;font-size:11.5px}.tnm b{font-weight:600}.tnm span{color:var(--mute)}.tnm .x{margin-left:auto;width:20px;height:20px;padding:0;font-size:14px;line-height:1}
+.tnt{margin-top:3px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12.5px;line-height:1.5;user-select:text}
+.tnadd{display:flex;gap:8px;align-items:flex-end}.tnadd textarea{flex:1;resize:vertical;min-height:40px}.tnadd button{height:40px}
+/* ---- glisser-déposer ---- */
+.task[draggable=true]{cursor:grab}.task.dragging{opacity:.35}
+.col{transition:background .12s,border-color .12s}.col.over{border-color:var(--red-b)!important;background:rgba(224,38,47,.06)!important}
+.sp-cheat .col.over{border-color:#2f47b8!important;background:rgba(61,92,255,.07)!important}
+/* ---- 0.5.2 : interface épurée (mêmes écrans, moins de bruit) ---- */
+.mainwrap{background:radial-gradient(60% 55% at 100% 0%,rgba(92,15,25,.75) 0%,rgba(40,8,14,.3) 40%,rgba(14,14,18,0) 75%),radial-gradient(55% 60% at 0% 100%,rgba(20,42,138,.6) 0%,rgba(12,22,70,.25) 40%,rgba(14,14,18,0) 75%),#0d0d12}
+.sp-cheat .mainwrap{background:radial-gradient(60% 55% at 100% 0%,rgba(20,42,138,.75) 0%,rgba(12,22,70,.3) 40%,rgba(14,14,18,0) 75%),radial-gradient(55% 60% at 0% 100%,rgba(74,13,22,.6) 0%,rgba(40,8,14,.25) 40%,rgba(14,14,18,0) 75%),#0d0d12}
+.side{background:var(--side)}
+.side nav a[aria-current=page]::after{box-shadow:none}
+.card,.panel,.tbl,.figs,.col,.editor,.notes,.chat{background:rgba(22,22,26,.82);border-color:rgba(255,255,255,.06);border-radius:12px}
+.panel{padding:16px 18px}.panel h3{font-size:12.5px;font-weight:600;letter-spacing:.1px}
+.bar{margin:10px auto 20px}.bar h2{letter-spacing:-.2px}.bar .sub{font-size:12px;opacity:.85}
+.hint{opacity:.8}
+.figs b{font-weight:600}
+.kanban{gap:14px}.col{background:rgba(255,255,255,.015);border-color:rgba(255,255,255,.05);padding:10px 10px 4px}
+.col h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--mute)}.col h3 i{box-shadow:none!important}
+.task{background:#1a1a1f;border-color:rgba(255,255,255,.06);border-radius:10px;padding:11px 12px;transition:border-color .12s,transform .12s}
+.task:hover{border-color:rgba(255,255,255,.14)}
+.task .mv{opacity:0;transition:opacity .12s}.task:hover .mv,.task:focus-within .mv{opacity:1}
+.task .meta{gap:6px}
+.frow{border-color:rgba(255,255,255,.05)}
+.topbar .pt{font-weight:500;color:#cfcfd5}
 /* 0.4.7 : les menus flottants doivent recevoir les clics même au-dessus de la zone de déplacement de la fenêtre */
 .pop,.pop *,#lbox,#lbox *,.mebtn{-webkit-app-region:no-drag !important}
 /* ---- 0.5.0 : profils ---- */

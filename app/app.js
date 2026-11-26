@@ -7,8 +7,8 @@ const QG = window.qg || { rcCapture: async () => true, rcSession: async () => tr
 // ---------- État ----------
 const CFG_KEY = 'qg.config';
 let cfg = loadCfg(), sb = null, me = null, phase = 'boot', authTab = 'login', authMsg = '';
-const S = { files: [], tasks: [], events: [], notes: [], messages: [], dms: [], notifications: [], reactions: [] };
-let profReady = true, noteMode = 'edit', noteLive = null, reactReady = true, presMeta = {}, myStatus = (() => { try { return localStorage.getItem('qg.status') || 'dispo' } catch { return 'dispo' } })();
+const S = { task_notes: [], files: [], tasks: [], events: [], notes: [], messages: [], dms: [], notifications: [], reactions: [] };
+let tnReady = true, profReady = true, noteMode = 'edit', noteLive = null, reactReady = true, presMeta = {}, myStatus = (() => { try { return localStorage.getItem('qg.status') || 'dispo' } catch { return 'dispo' } })();
 let notifReady = true, soundOn = (() => { try { return localStorage.getItem('qg.sound') !== '0' } catch { return true } })();
 let autoStart = true, online = new Set(), pres = null, dmReady = true, dmOpen = (() => { try { return localStorage.getItem('qg.dm') !== '0' } catch { return true } })(), dmWith = null, dmDraft = '';
 let members = []; const names = {}; const thumbs = {};
@@ -118,9 +118,10 @@ const QUERIES = {
   messages: () => sb.from('messages').select('*').order('at', { ascending: false }).limit(150),
   dms: () => sb.from('dms').select('*').order('at', { ascending: false }).limit(1000),
   notifications: () => sb.from('notifications').select('*').order('at', { ascending: false }).limit(200),
-  reactions: () => sb.from('reactions').select('*').order('at', { ascending: false }).limit(3000)
+  reactions: () => sb.from('reactions').select('*').order('at', { ascending: false }).limit(3000),
+  task_notes: () => sb.from('task_notes').select('*').order('at', { ascending: true }).limit(3000)
 };
-async function loadTable(t) { const { data, error } = await QUERIES[t](); if (t === 'dms') dmReady = !error; if (t === 'notifications') notifReady = !error; if (t === 'reactions') reactReady = !error; if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'messages' || t === 'dms') ensureImgs(); if (t === 'dms') markRead(); render() } }
+async function loadTable(t) { const { data, error } = await QUERIES[t](); if (t === 'dms') dmReady = !error; if (t === 'notifications') notifReady = !error; if (t === 'reactions') reactReady = !error; if (t === 'task_notes') { tnReady = !error; if (!error) setTimeout(refreshTn) } if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'messages' || t === 'dms') ensureImgs(); if (t === 'dms') markRead(); render() } }
 async function loadMembers() { let { data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen,avatar,role,bio').order('name'); profReady = !error; if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen').order('name')); if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at').order('name')); if (!error) { members = data || []; members.forEach(m => names[m.user_id] = m.name); render(); ensureAvatars() } }
 const timers = {};
 function reload(t) { clearTimeout(timers[t]); timers[t] = setTimeout(() => t === 'members' ? loadMembers() : S[t] && loadTable(t), 250) }
@@ -210,7 +211,7 @@ function vHome() {
 <section class="panel"><h3>Prochains rendez-vous <a href="${hrefOf('planning')}">Planning →</a></h3>${up.slice(0, 4).map(e => { const d = fmtDate(e.ev_date); return `<div class="li"><b class="d">${esc(d.d)} ${esc(d.m)}</b><span>${esc(e.title)}${e.ev_time ? ' · ' + esc(e.ev_time) : ''}</span></div>` }).join('') || none('Rien de prévu pour l’instant.')}</section>
 <section class="panel"><h3>Mes tâches <a href="${hrefOf('taches')}">Tâches →</a></h3>${mine.slice(0, 5).map(t => `<div class="li"><b class="d">${t.status === 'doing' ? 'En cours' : 'À faire'}</b><span>${esc(t.title)}</span></div>`).join('') || none('Aucune tâche assignée à toi.')}</section>
 <section class="panel"><h3>Derniers fichiers <a href="${hrefOf('fichiers')}">Fichiers →</a></h3>${curFiles().slice(0, 5).map(({ f, n }) => `<div class="li"><b class="d">${esc(String(f.folder || 'Autre').slice(0, 8))}</b><span>${esc(f.name)}${n > 1 ? ` <span class="ver">v${n}</span>` : ''} <span class="sub">· ${esc(nm(f.author))}, ${esc(ago(f.at))}</span></span></div>`).join('') || none('Aucun fichier partagé.')}</section>
-<section class="panel"><h3>Discussion <a href="${hrefOf('discussion')}">Ouvrir →</a></h3>${SP('messages').slice(0, 4).map(m => `<div class="li"><b class="d">${esc(nm(m.author).split(' ')[0])}</b><span>${esc(String(m.body || '').slice(0, 120))}</span></div>`).join('') || none('Pas encore de message.')}</section>
+<section class="panel"><h3>Discussion <a href="${hrefOf('discussion')}">Ouvrir →</a></h3>${SP('messages').slice(0, 4).map(m => `<div class="li"><b class="d">${esc(nm(m.author).split(' ')[0])}</b><span>${esc((String(m.body || '').replace(/```[\s\S]*?(```|$)/g, ' [code] ').trim() || (m.img ? 'Image' : '')).slice(0, 120))}</span></div>`).join('') || none('Pas encore de message.')}</section>
 </div>`
 }
 function fileCard(f, n = 1) {
@@ -230,15 +231,16 @@ ${list.length ? `<div class="tbl">${list.map(x => fileCard(x.f, x.n)).join('')}<
 }
 function card(t, i) {
   const id = esc(t.id);
-  return `<article class="task${t.prio === 'Haute' ? ' hi' : ''}"><div class="thead"><button class="tt" data-act="edittask" data-id="${id}">${esc(t.title || 'Sans titre')}</button><button class="tdel" data-act="deltask" data-id="${id}" aria-label="Supprimer la tâche" title="Supprimer la tâche"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button></div>
+  const nn = tnReady ? S.task_notes.filter(n => n.task === t.id).length : 0;
+  return `<article class="task${t.prio === 'Haute' ? ' hi' : ''}" draggable="true" data-task="${id}"><div class="thead"><button class="tt" data-act="edittask" data-id="${id}">${esc(t.title || 'Sans titre')}</button><button class="tdel" data-act="deltask" data-id="${id}" aria-label="Supprimer la tâche" title="Supprimer la tâche"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button></div>
 ${t.descr ? `<p>${esc(String(t.descr).slice(0, 140))}</p>` : ''}
-<div class="meta"><span class="tag">${esc(t.tag || 'Autre')}</span>${t.prio === 'Haute' ? '<span class="hot">Urgent</span>' : ''}<span>${t.assignee ? esc(nm(t.assignee)) : 'Personne'}</span></div>
+<div class="meta"><span class="tag">${esc(t.tag || 'Autre')}</span>${t.prio === 'Haute' ? '<span class="hot">Urgent</span>' : ''}<span>${t.assignee ? esc(nm(t.assignee)) : 'Personne'}</span>${nn ? `<button class="tnc" data-act="edittask" data-id="${id}" aria-label="${nn} note${nn > 1 ? 's' : ''}" title="${nn} note${nn > 1 ? 's' : ''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>${nn}</button>` : ''}</div>
 <div class="mv">${i > 0 ? `<button class="sm" data-act="mv" data-id="${id}" data-to="${ST[i - 1][0]}" aria-label="Revenir à ${ST[i - 1][1]}">←</button>` : ''}${i < 2 ? `<button class="sm" data-act="mv" data-id="${id}" data-to="${ST[i + 1][0]}">${i === 0 ? 'Commencer' : 'Terminer'} →</button>` : ''}</div></article>`
 }
 function vTasks() {
   const tl = taskMine ? SP('tasks').filter(t => t.assignee === me) : SP('tasks');
-  return `<div class="bar"><div><h2>Tâches</h2><p class="sub">Qui fait quoi sur le projet.</p></div><div class="row"><label class="chk"><input type="checkbox" data-act="tmine"${taskMine ? ' checked' : ''}> Seulement les miennes</label><button class="pri" data-act="newtask">Nouvelle tâche</button></div></div>
-<div class="kanban">${ST.map(([k, l], i) => { const col = tl.filter(t => (ST.some(s => s[0] === t.status) ? t.status : 'todo') === k); return `<section class="col c-${k}"><h3><i></i>${l} <span>${col.length}</span></h3>${col.map(t => card(t, i)).join('') || '<p class="empty">Rien ici.</p>'}</section>` }).join('')}</div>`
+  return `<div class="bar"><div><h2>Tâches</h2><p class="sub">Glisse une tâche d'une colonne à l'autre pour changer son statut.</p></div><div class="row"><label class="chk"><input type="checkbox" data-act="tmine"${taskMine ? ' checked' : ''}> Seulement les miennes</label><button class="pri" data-act="newtask">Nouvelle tâche</button></div></div>
+<div class="kanban">${ST.map(([k, l], i) => { const col = tl.filter(t => (ST.some(s => s[0] === t.status) ? t.status : 'todo') === k); return `<section class="col c-${k}" data-col="${k}"><h3><i></i>${l} <span>${col.length}</span></h3>${col.map(t => card(t, i)).join('') || '<p class="empty">Rien ici.</p>'}</section>` }).join('')}</div>`
 }
 function evRow(e) {
   const d = fmtDate(e.ev_date); const going = Array.isArray(e.going) ? e.going.filter(isId) : []; const mine = going.includes(me);
@@ -433,7 +435,7 @@ function taskForm(t) {
 <label>Titre *<input name="title" required maxlength="140" value="${esc(t ? t.title : '')}" placeholder="${esc(C().taskEx)}"></label>
 <label>Détails<textarea name="descr" rows="4" maxlength="4000">${esc(t ? t.descr : '')}</textarea></label>
 <div class="two"><label>Catégorie<select name="tag">${opts(t && t.tag && !C().ttags.includes(t.tag) ? [t.tag, ...C().ttags] : C().ttags, t ? t.tag : C().ttags[0])}</select></label><label>Priorité<select name="prio">${opts(['Basse', 'Normale', 'Haute'], t && t.prio || 'Normale')}</select></label></div>
-<div class="two"><label>Assignée à<select name="assignee">${memberOpts(t ? t.assignee : me)}</select></label><label>Statut<select name="status">${ST.map(([k, l]) => `<option value="${k}"${(t && t.status || 'todo') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label></div>`,
+<div class="two"><label>Assignée à<select name="assignee">${memberOpts(t ? t.assignee : me)}</select></label><label>Statut<select name="status">${ST.map(([k, l]) => `<option value="${k}"${(t && t.status || 'todo') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label></div>${t ? tnBlock(t) : ''}`,
     v => { const body = { title: v.title.trim().slice(0, 140), descr: v.descr || '', tag: v.tag, prio: v.prio, assignee: v.assignee || null, status: v.status, upd: new Date().toISOString() };
       if (t) return W('tasks', sb.from('tasks').update(body).eq('id', t.id)).then(ok => { if (ok) notifyAssign({ ...t, ...body }, t.assignee); return ok });
       return (async () => { const { data, error } = await sb.from('tasks').insert({ ...body, space }).select().single(); if (error) { toast(errMsg(error)); return false } reload('tasks'); notifyAssign(data, null); return true })() }, 'Enregistrer',
@@ -576,8 +578,7 @@ main.addEventListener('click', e => { const b = e.target.closest('[data-act]'); 
 main.addEventListener('submit', onForm);
 main.addEventListener('input', e => { const t = e.target; if (t.id && t.type !== 'file' && t.type !== 'password') t.dataset.dirty = 1; if (t.id === 'fq') { fileQ = t.value; render() } if (t.id === 'nq') { noteQ = t.value; render() } });
 main.addEventListener('change', e => { const t = e.target; if (t.id === 'upin' && t.files.length) { const l = [...t.files]; t.value = ''; uploadFiles(l) }
-  if (t.id === 'avin' && t.files.length) { const f0 = t.files[0]; t.value = ''; avatarUpload(f0) }
-  if (t.id === 'cimgin' && t.files.length) { const l = [...t.files]; t.value = ''; addImgs('chat', l) }
+
   if (t.id === 'goin' && t.files.length) { const l = [...t.files]; t.value = ''; const folder = ($('#upFolder') || {}).value || 'Autre'; (async () => { for (const f of l) await goUpload(f, folder) })() } if (t.id === 'ntag' || t.id === 'upFolder') t.dataset.dirty = 1 });
 main.addEventListener('keydown', e => {
   const t = e.target;
@@ -811,6 +812,60 @@ function vRemote() {
 </div>`;
 }
 
+// ---------- Notes sur les tâches ----------
+const tnOf = id => S.task_notes.filter(n => n.task === id);
+const tnItem = n => `<div class="tn"><button type="button" class="profb" data-prof="${esc(n.author)}" aria-label="Profil de ${esc(nm(n.author))}">${avatar(n.author)}</button><div class="tnb"><div class="tnm"><b>${esc(nm(n.author))}</b><span>${esc(ago(n.at))}</span>${n.author === me ? `<button type="button" class="x" data-tn="del" data-id="${esc(n.id)}" aria-label="Supprimer la note">×</button>` : ''}</div><div class="tnt">${rich(n.body)}</div></div></div>`;
+function tnBlock(t) {
+  if (!tnReady) return `<div class="tnotes"><p class="sub">Pour ajouter des notes aux tâches, lance <b>supabase-update-0.5.2.sql</b> dans Supabase &gt; SQL Editor.</p></div>`;
+  const ns = tnOf(t.id);
+  return `<div class="tnotes"><div class="tnh">Notes <span>${ns.length}</span></div><div class="tnlist" id="tnlist" data-task="${esc(t.id)}">${ns.map(tnItem).join('') || '<p class="empty">Aucune note pour l’instant. Toute l’équipe peut en ajouter.</p>'}</div>
+<div class="tnadd"><textarea id="tntext" rows="2" maxlength="2000" placeholder="Ajouter une note… (Ctrl+Entrée pour envoyer)" aria-label="Nouvelle note"></textarea><button type="button" class="pri" data-tn="add" data-id="${esc(t.id)}">Ajouter</button></div></div>`;
+}
+function refreshTn() {
+  const l = $('#tnlist'); if (!l) return; const ns = tnOf(l.dataset.task);
+  const atBot = l.scrollHeight - l.scrollTop - l.clientHeight < 40;
+  l.innerHTML = ns.map(tnItem).join('') || '<p class="empty">Aucune note pour l’instant. Toute l’équipe peut en ajouter.</p>';
+  const h = l.parentElement.querySelector('.tnh span'); if (h) h.textContent = ns.length; if (atBot) l.scrollTop = l.scrollHeight;
+}
+async function tnAdd(task) {
+  const ta = $('#tntext'); if (!ta) return; const body = ta.value.trim(); if (!body) return ta.focus();
+  ta.value = ''; ta.disabled = true;
+  const { data, error } = await sb.from('task_notes').insert({ task, body: body.slice(0, 2000) }).select().single();
+  ta.disabled = false; ta.focus();
+  if (error) { ta.value = body; return toast(/relation|does not exist|schema cache/i.test(error.message || '') ? 'Lance supabase-update-0.5.2.sql dans Supabase pour activer les notes.' : errMsg(error)) }
+  if (data && !S.task_notes.some(n => n.id === data.id)) S.task_notes.push(data);
+  refreshTn(); const l = $('#tnlist'); if (l) l.scrollTop = l.scrollHeight; if (view === 'taches') render();
+}
+async function tnDel(id) {
+  const n = S.task_notes.find(x => x.id === id); if (!n) return;
+  S.task_notes = S.task_notes.filter(x => x !== n); refreshTn();
+  const { error } = await sb.from('task_notes').delete().eq('id', id); if (error) { toast(errMsg(error)); reload('task_notes') } else if (view === 'taches') render();
+}
+$('#mbody').addEventListener('click', e => { const b = e.target.closest('[data-tn]'); if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.dataset.tn === 'add') tnAdd(b.dataset.id); else tnDel(b.dataset.id) });
+$('#mbody').addEventListener('keydown', e => { if (e.target.id === 'tntext' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); const b = $('#mbody [data-tn=add]'); if (b) tnAdd(b.dataset.id) } });
+
+// ---------- Glisser-déposer des tâches ----------
+let dragTask = null;
+main.addEventListener('dragstart', e => {
+  const c = e.target.closest && e.target.closest('.task[data-task]'); if (!c || view !== 'taches') return;
+  dragTask = c.dataset.task; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'qg-task:' + dragTask);
+  setTimeout(() => c.classList.add('dragging'));
+});
+main.addEventListener('dragend', () => { dragTask = null; document.querySelectorAll('.task.dragging,.col.over').forEach(x => x.classList.remove('dragging', 'over')) });
+main.addEventListener('dragover', e => {
+  if (!dragTask) return; const col = e.target.closest && e.target.closest('.col[data-col]'); if (!col) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.col.over').forEach(x => { if (x !== col) x.classList.remove('over') }); col.classList.add('over');
+});
+main.addEventListener('drop', async e => {
+  if (!dragTask) return; const col = e.target.closest && e.target.closest('.col[data-col]'); if (!col) return;
+  e.preventDefault(); e.stopPropagation(); const id = dragTask, to = col.dataset.col; dragTask = null; col.classList.remove('over');
+  const t = S.tasks.find(x => x.id === id); if (!t || t.status === to) return render();
+  const prev = t.status; t.status = to; render();
+  const { error } = await sb.from('tasks').update({ status: to, upd: new Date().toISOString() }).eq('id', id);
+  if (error) { t.status = prev; render(); toast(errMsg(error)) } else toast(`« ${t.title} » → ${(ST.find(s => s[0] === to) || [, to])[1]}`);
+});
+
 // ---------- Profils des membres ----------
 const ROLES = ['Fondateur', 'Admin', 'Développeur', 'Scripteur', 'Mappeur', 'Graphiste', 'Testeur', 'Modérateur'];
 const okAvPath = p => typeof p === 'string' && /^avatars\/[\w-]+\/[\w.\-]+$/.test(p);
@@ -829,7 +884,7 @@ function profileEditor() {
   const m = memberOf(me) || {};
   if (!profReady) return `<section class="panel"><h3>Mon pseudo</h3><form id="namef" class="row"><input id="myname" name="name" maxlength="40" value="${esc(names[me] || '')}" required style="flex:1"><button class="pri">Enregistrer</button></form><p class="sub" style="margin-top:10px">Pour ajouter une photo, un rôle et une bio, lance <b>supabase-update-0.5.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l'appli.</p></section>`;
   return `<section class="panel"><h3>Mon profil</h3>
-<div class="profed"><span class="av xl">${avInner(me)}</span><div class="profbtns"><label class="btn" for="avin" tabindex="0">${m.avatar ? 'Changer la photo' : 'Ajouter une photo'}</label><input type="file" id="avin" accept="image/png,image/jpeg,image/webp,image/gif" hidden>${m.avatar ? '<button class="ghost sm" data-act="avdel">Retirer la photo</button>' : ''}<small class="sub">PNG, JPG ou WebP. Elle est recadrée en carré automatiquement.</small></div></div>
+<div class="profed"><span class="av xl">${avInner(me)}</span><div class="profbtns"><button type="button" data-pick="avin">${m.avatar ? 'Changer la photo' : 'Ajouter une photo'}</button>${m.avatar ? '<button class="ghost sm" data-act="avdel">Retirer la photo</button>' : ''}<small class="sub">PNG, JPG ou WebP. Elle est recadrée en carré automatiquement.</small></div></div>
 <form id="namef" class="pform"><label>Pseudo<input id="myname" name="name" maxlength="40" value="${esc(names[me] || '')}" required></label>
 <label>Rôle dans l'équipe<input id="myrole" name="role" maxlength="40" list="qgroles" value="${esc(m.role || '')}" placeholder="Ex. Scripteur, Mappeur…"></label><datalist id="qgroles">${ROLES.map(r => `<option value="${esc(r)}">`).join('')}</datalist>
 <label>Bio<textarea id="mybio" name="bio" rows="3" maxlength="300" placeholder="Quelques mots sur toi : ce que tu fais sur le projet, tes horaires…">${esc(m.bio || '')}</textarea></label>
@@ -1019,7 +1074,7 @@ const pend = { chat: [], dm: [] }, imgs = {}, imgWait = new Set();
 const IMG_MAX = 10 * 1048576;
 const isImg = f => f && /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(f.type || '');
 const IMGI = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>';
-const imgPick = id => `<label class="imgbtn" for="${id}" tabindex="0" title="Envoyer une image" aria-label="Envoyer une image">${IMGI}</label><input type="file" id="${id}" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>`;
+const imgPick = id => `<button type="button" class="imgbtn" data-pick="${id}" title="Envoyer une image" aria-label="Envoyer une image">${IMGI}</button>`;
 const imgQueue = k => pend[k].length ? `<div class="imgq">${pend[k].map((p, i) => `<span class="qimg"><img src="${esc(p.url)}" alt="${esc(p.file.name)}"><button type="button" class="x" ${k === 'dm' ? 'data-dm="unimg"' : 'data-act="unimg"'} data-id="${i}" aria-label="Retirer l'image">×</button></span>`).join('')}<small>${pend[k].length > 1 ? pend[k].length + ' images prêtes' : 'Image prête'} : ajoute un texte si tu veux, puis Envoyer.</small></div>` : '';
 function addImgs(k, list) {
   let bad = 0, big = 0;
@@ -1081,11 +1136,15 @@ document.addEventListener('keydown', e => {
   if (pop) { closePop(); return }
   const lb = $('#lbox'); if (lb && !lb.hidden) lb.hidden = true;
 });
-document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('imgbtn')) { e.preventDefault(); const i = document.getElementById(e.target.htmlFor); if (i) i.click() } });
 window.addEventListener('resize', closePop);
 // garde la discussion en bas quand une image finit de charger
 document.addEventListener('load', e => { if (e.target.tagName !== 'IMG') return; const l = e.target.closest('#chatlog,#dmlog'); if (l && l.scrollHeight - l.scrollTop - l.clientHeight < e.target.clientHeight + 120) l.scrollTop = l.scrollHeight }, true);
-$('#dm').addEventListener('change', e => { if (e.target.id === 'dmimgin' && e.target.files.length) { const l = [...e.target.files]; e.target.value = ''; addImgs('dm', l) } });
+// Les champs « choisir un fichier » vivent hors des zones redessinées : un re-rendu pendant le choix ne perd plus le fichier.
+for (const [id, acc, multi] of [['cimgin', 'image/png,image/jpeg,image/gif,image/webp', true], ['dmimgin', 'image/png,image/jpeg,image/gif,image/webp', true], ['avin', 'image/png,image/jpeg,image/webp,image/gif', false]]) {
+  const i = document.createElement('input'); i.type = 'file'; i.id = id; i.accept = acc; i.multiple = multi; i.hidden = true; i.tabIndex = -1; document.body.appendChild(i);
+  i.addEventListener('change', () => { const l = [...i.files]; i.value = ''; if (!l.length) return; if (id === 'avin') avatarUpload(l[0]); else addImgs(id === 'dmimgin' ? 'dm' : 'chat', l) });
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-pick]'); if (!b) return; e.preventDefault(); const i = document.getElementById(b.dataset.pick); if (i) i.click() });
 $('#dm').addEventListener('paste', e => { if (e.target.id !== 'dmtext') return; const l = [...(e.clipboardData && e.clipboardData.files || [])].filter(isImg); if (l.length) { e.preventDefault(); addImgs('dm', l) } });
 $('#dm').addEventListener('dragover', e => { if (!dmWith) return; e.preventDefault(); e.stopPropagation(); $('#dm').classList.add('drop') });
 $('#dm').addEventListener('dragleave', e => { if (e.target.id === 'dm') $('#dm').classList.remove('drop') });
