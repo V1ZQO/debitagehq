@@ -86,7 +86,7 @@ function createTray() {
     { type: 'separator' },
     ...sections.map(([v, l]) => ({ label: l, click: () => goTo(v) })),
     { type: 'separator' },
-    { label: 'Rechercher une mise à jour', click: () => { if (win) win.webContents.send('nav', 'equipe'); showWindow(); } },
+    { label: 'Rechercher une mise à jour', click: () => { if (win) win.webContents.send('nav', 'parametres'); showWindow(); } },
     { label: 'Quitter DebitageHQ', click: () => { quitting = true; app.quit(); } }
   ]));
   tray.on('click', showWindow);

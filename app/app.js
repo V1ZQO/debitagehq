@@ -10,12 +10,12 @@ let cfg = loadCfg(), sb = null, me = null, phase = 'boot', authTab = 'login', au
 const S = { files: [], tasks: [], events: [], notes: [], messages: [], dms: [] };
 let autoStart = true, online = new Set(), pres = null, dmReady = true, dmOpen = (() => { try { return localStorage.getItem('qg.dm') !== '0' } catch { return true } })(), dmWith = null, dmDraft = '';
 let members = []; const names = {}; const thumbs = {};
-const VIEWS = ['accueil', 'fichiers', 'taches', 'planning', 'notes', 'discussion', 'equipe', 'remote'];
+const VIEWS = ['accueil', 'fichiers', 'taches', 'planning', 'notes', 'discussion', 'equipe', 'remote', 'parametres'];
 const SPACES = { serveur: { label: 'Serveur GTA 6', sub: 'Développement' }, cheat: { label: 'Cheat', sub: 'Projet cheat' } };
 let space = 'serveur', spaceReady = true;
 const spOf = r => (r && r.space) || 'serveur';
 const SP = t => S[t].filter(r => spOf(r) === space);   // données de l'espace affiché
-const GLOBAL = ['equipe', 'remote'];
+const GLOBAL = ['equipe', 'remote', 'parametres'];
 const hrefOf = v => GLOBAL.includes(v) ? '#' + v : `#${space}-${v}`;
 let view = 'accueil', fileFolder = 'Tous', fileQ = '', noteQ = '', taskMine = false, noteSel = null, uploading = [], version = '';
 // Catégories propres à chaque espace
@@ -259,9 +259,14 @@ function vChat() {
 <form class="send" id="chatf"><textarea id="ctext" rows="2" maxlength="4000" placeholder="Écris un message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)" aria-label="Message"></textarea><button class="pri">Envoyer</button></form>`
 }
 function vTeam() {
-  return `<div class="bar"><div><h2>Équipe</h2><p class="sub">Membres, invitations et réglages.</p></div><button class="ghost" data-act="logout">Se déconnecter</button></div>
+  return `<div class="bar"><div><h2>Équipe</h2><p class="sub">Les membres de l'équipe.</p></div></div>
 <div class="grid2">
 <section class="panel"><h3>Membres (${members.length})</h3>${members.map(m => `<div class="mem"><b>${avatar(m.user_id)}${esc(m.name)}${m.user_id === me ? ' (moi)' : ''}</b>${m.user_id !== me ? `<button class="sm" data-act="dmto" data-id="${esc(m.user_id)}">Message</button>` : ''}<span class="sub">depuis le ${esc(new Date(ts(m.joined_at)).toLocaleDateString('fr-FR'))}</span></div>`).join('')}</section>
+</div>`
+}
+function vSettings() {
+  return `<div class="bar"><div><h2>Paramètres</h2><p class="sub">Invitations, pseudo et réglages de l'application.</p></div><button class="ghost" data-act="logout">Se déconnecter</button></div>
+<div class="grid2">
 <section class="panel"><h3>Inviter un collègue</h3><p>Envoie-lui l'installateur de l'application et ce code d'invitation. Il le collera au premier lancement.</p>
 <div class="code" id="invite">${esc(makeCode(cfg))}</div><div class="row" style="margin-top:10px"><button class="pri" data-act="copyinvite">Copier le code</button></div>
 <p class="sub" style="margin-top:10px">Garde ce code dans l'équipe : n'importe qui qui l'a peut rejoindre DebitageHQ.</p></section>
@@ -272,14 +277,14 @@ function vTeam() {
 </div>`
 }
 
-const V = { accueil: vHome, fichiers: vFiles, taches: vTasks, planning: vPlan, notes: vNotes, discussion: vChat, equipe: vTeam, remote: vRemote };
+const V = { accueil: vHome, fichiers: vFiles, taches: vTasks, planning: vPlan, notes: vNotes, discussion: vChat, equipe: vTeam, remote: vRemote, parametres: vSettings };
 function render(fresh) {
   const main = $('#main'); const a = document.activeElement; const keep = {};
   if (!fresh) main.querySelectorAll('[data-dirty]').forEach(el => { if (el.id) keep[el.id] = el.value });
   const fid = !fresh && a && main.contains(a) && a.id ? a.id : null; let s0 = null, s1 = null; try { s0 = a.selectionStart; s1 = a.selectionEnd } catch {}
   const ch = $('#chatlog'); const atBot = !ch || ch.scrollHeight - ch.scrollTop - ch.clientHeight < 80;
   $('#shell').classList.toggle('gate-mode', phase !== 'app');
-  if (phase === 'app') { const n = names[me] || ''; $('#mebox').innerHTML = `<div class="av">${esc((n[0] || '?').toUpperCase())}</div><span><b>${esc(n || 'Moi')}</b><small>Membre de l'équipe</small></span>`; const T = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion', equipe: 'Équipe' }; $('#pgtitle').textContent = view === 'equipe' ? 'Équipe' : view === 'remote' ? 'Contrôle à distance' : `${SPACES[space].label}  ·  ${T[view] || ''}` }
+  if (phase === 'app') { const n = names[me] || ''; $('#mebox').innerHTML = `<div class="av">${esc((n[0] || '?').toUpperCase())}</div><span><b>${esc(n || 'Moi')}</b><small>Membre de l'équipe</small></span>`; const T = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion', equipe: 'Équipe' }; $('#pgtitle').textContent = view === 'equipe' ? 'Équipe' : view === 'remote' ? 'Contrôle à distance' : view === 'parametres' ? 'Paramètres' : `${SPACES[space].label}  ·  ${T[view] || ''}` }
   main.innerHTML = phase === 'setup' ? vSetup() : phase === 'auth' ? vAuth() : phase === 'app' ? ((!spaceReady && !GLOBAL.includes(view) ? `<div class="notice" style="margin-bottom:14px">Pour séparer Serveur GTA 6 et Cheat, lance le fichier <b>supabase-update-0.2.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l'appli. En attendant, tu ne peux rien ajouter.</div>` : '') + V[view]()) : '<p class="empty">Connexion…</p>';
   for (const k in keep) { const el = document.getElementById(k); if (el) { try { el.value = keep[k]; el.dataset.dirty = 1 } catch {} } }
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus({ preventScroll: true }); try { if (s0 != null) el.setSelectionRange(s0, s1) } catch {} } }
@@ -296,6 +301,7 @@ const ICONS = {
   notes: '<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>',
   discussion: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
   equipe: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
+  parametres: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   remote: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m10 9 4 2.5-4 2.5z"/>',
   serveur: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
   cheat: '<path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z"/><path d="m9.5 12 2 2 3.5-4"/>'
@@ -308,7 +314,7 @@ function buildSide() {
   nav.innerHTML = Object.entries(SPACES).map(([id, s]) => { let closed = false; try { closed = localStorage.getItem('qg.grp.' + id) === '0' } catch {}
     return `<div class="grp g-${id}${closed ? ' closed' : ''}" data-g="${id}"><button class="gh" data-grp="${id}" aria-expanded="${!closed}">${svg(ICONS[id])}<span><b>${s.label}</b><small>${s.sub}</small></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
 <nav class="gl" aria-label="${s.label}">${Object.entries(LABELS).map(([v, l]) => `<a href="#${id}-${v}">${svg(ICONS[v])}<span>${l}</span></a>`).join('')}</nav></div>` }).join('')
-    + `<div class="slabel">Général</div><nav aria-label="Général"><a href="#remote">${svg(ICONS.remote)}<span>Contrôle à distance</span></a><a href="#equipe">${svg(ICONS.equipe)}<span>Équipe</span></a></nav>`;
+    + `<div class="slabel">Général</div><nav aria-label="Général"><a href="#remote">${svg(ICONS.remote)}<span>Contrôle à distance</span></a><a href="#equipe">${svg(ICONS.equipe)}<span>Équipe</span></a><a href="#parametres">${svg(ICONS.parametres)}<span>Paramètres</span></a></nav>`;
   nav.addEventListener('click', e => { const b = e.target.closest('[data-grp]'); if (b) { e.preventDefault(); toggleGrp(b.dataset.grp) } });
 }
 buildSide();
