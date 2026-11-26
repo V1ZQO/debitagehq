@@ -1,12 +1,9 @@
 # Construit l'installateur Windows et publie la mise à jour sur GitHub Releases.
-# Se lance tout seul quand la version change dans package.json sur la branche main,
-# ou à la main depuis l'onglet Actions > « Publier une mise à jour » > Run workflow.
+# Ne se lance JAMAIS tout seul : uniquement à la main, depuis l'onglet
+# Actions > « Publier une mise à jour » > Run workflow.
 name: Publier une mise à jour
 
 on:
-  push:
-    branches: [main]
-    paths: [package.json]
   workflow_dispatch:
 
 permissions:
