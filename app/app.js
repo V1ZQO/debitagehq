@@ -7,17 +7,16 @@ const QG = window.qg || { rcCapture: async () => true, rcSession: async () => tr
 // ---------- État ----------
 const CFG_KEY = 'qg.config';
 let cfg = loadCfg(), sb = null, me = null, phase = 'boot', authTab = 'login', authMsg = '';
-const S = { files: [], tasks: [], events: [], notes: [], messages: [], dms: [], notifications: [], reactions: [] };
-let reactReady = true, presMeta = {}, myStatus = (() => { try { return localStorage.getItem('qg.status') || 'dispo' } catch { return 'dispo' } })();
+const S = { files: [], tasks: [], events: [], notes: [], messages: [], dms: [], notifications: [] };
 let notifReady = true, soundOn = (() => { try { return localStorage.getItem('qg.sound') !== '0' } catch { return true } })();
 let autoStart = true, online = new Set(), pres = null, dmReady = true, dmOpen = (() => { try { return localStorage.getItem('qg.dm') !== '0' } catch { return true } })(), dmWith = null, dmDraft = '';
 let members = []; const names = {}; const thumbs = {};
-const VIEWS = ['accueil', 'fichiers', 'taches', 'planning', 'notes', 'discussion', 'equipe', 'vocal', 'remote', 'parametres', 'notifications'];
+const VIEWS = ['accueil', 'fichiers', 'taches', 'planning', 'notes', 'discussion', 'equipe', 'remote', 'parametres', 'notifications'];
 const SPACES = { serveur: { label: 'Serveur GTA 6', sub: 'Développement' }, cheat: { label: 'Cheat', sub: 'Projet cheat' } };
 let space = 'serveur', spaceReady = true;
 const spOf = r => (r && r.space) || 'serveur';
 const SP = t => S[t].filter(r => spOf(r) === space);   // données de l'espace affiché
-const GLOBAL = ['equipe', 'vocal', 'remote', 'parametres', 'notifications'];
+const GLOBAL = ['equipe', 'remote', 'parametres', 'notifications'];
 const hrefOf = v => GLOBAL.includes(v) ? '#' + v : `#${space}-${v}`;
 let view = 'accueil', fileFolder = 'Tous', fileQ = '', noteQ = '', taskMine = false, noteSel = null, uploading = [], version = '';
 // Catégories propres à chaque espace
@@ -117,10 +116,9 @@ const QUERIES = {
   notes: () => sb.from('notes').select('*').order('upd', { ascending: false }).limit(500),
   messages: () => sb.from('messages').select('*').order('at', { ascending: false }).limit(150),
   dms: () => sb.from('dms').select('*').order('at', { ascending: false }).limit(1000),
-  notifications: () => sb.from('notifications').select('*').order('at', { ascending: false }).limit(200),
-  reactions: () => sb.from('reactions').select('*').order('at', { ascending: false }).limit(3000)
+  notifications: () => sb.from('notifications').select('*').order('at', { ascending: false }).limit(200)
 };
-async function loadTable(t) { const { data, error } = await QUERIES[t](); if (t === 'dms') dmReady = !error; if (t === 'notifications') notifReady = !error; if (t === 'reactions') reactReady = !error; if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'messages' || t === 'dms') ensureImgs(); if (t === 'dms') markRead(); render() } }
+async function loadTable(t) { const { data, error } = await QUERIES[t](); if (t === 'dms') dmReady = !error; if (t === 'notifications') notifReady = !error; if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'dms') markRead(); render() } }
 async function loadMembers() { let { data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen').order('name'); if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at').order('name')); if (!error) { members = data || []; members.forEach(m => names[m.user_id] = m.name); render() } }
 const timers = {};
 function reload(t) { clearTimeout(timers[t]); timers[t] = setTimeout(() => t === 'members' ? loadMembers() : S[t] && loadTable(t), 250) }
@@ -129,14 +127,14 @@ function subscribe() {
   if (channel) sb.removeChannel(channel);
   channel = sb.channel('qg-live').on('postgres_changes', { event: '*', schema: 'public' }, p => { reload(p.table); if (p.eventType === 'INSERT') onInsert(p.table, p.new) }).subscribe();
   setInterval(() => { Object.keys(S).forEach(reload); reload('members'); touchSeen() }, 120000);
-  startPresence(); touchSeen(); rcListen(); vcListen();
+  startPresence(); touchSeen(); rcListen();
 }
 // ---------- Présence en ligne ----------
 function startPresence() {
   if (pres) sb.removeChannel(pres);
   pres = sb.channel('qg-presence', { config: { presence: { key: me } } });
-  pres.on('presence', { event: 'sync' }, () => { const st = pres.presenceState(); online = new Set(Object.keys(st)); presMeta = {}; for (const k in st) presMeta[k] = (st[k] && st[k][0]) || {}; renderDM(); renderMe(); if (['equipe', 'remote', 'vocal'].includes(view) && $('#modal').hidden) render() })
-    .subscribe(async (s) => { if (s === 'SUBSCRIBED') { try { await pres.track({ at: Date.now(), status: myStatus }) } catch {} } });
+  pres.on('presence', { event: 'sync' }, () => { online = new Set(Object.keys(pres.presenceState())); renderDM() })
+    .subscribe(async (s) => { if (s === 'SUBSCRIBED') { try { await pres.track({ at: Date.now() }) } catch {} } });
 }
 function touchSeen() { if (sb && me) sb.from('members').update({ last_seen: new Date().toISOString() }).eq('user_id', me).then(() => {}, () => {}) }
 window.addEventListener('beforeunload', touchSeen);
@@ -146,13 +144,13 @@ async function onInsert(t, d) {
     const focused = await QG.isFocused();
     if (focused && dmOpen && dmWith === d.sender) return;
     ping('msg');
-    alert2('Message privé de ' + nm(d.sender), bodyOf(d), 'dm:' + d.sender);
+    QG.notify('Message privé de ' + nm(d.sender), String(d.body || ''), 'dm:' + d.sender);
     return;
   }
   if (t === 'notifications') {
     if (!d || d.recipient !== me) return;
     ping('task');
-    alert2(`${nm(d.actor)} t'a assigné une tâche`, String(d.title || ''), 'notifications');
+    QG.notify(`${nm(d.actor)} t'a assigné une tâche`, String(d.title || ''), 'notifications');
     return;
   }
   if (t === 'messages' && d && d.author !== me) {
@@ -161,9 +159,9 @@ async function onInsert(t, d) {
   }
   if (!d || d.author === me || await QG.isFocused()) return;
   const sv = v => `${spOf(d)}-${v}`, tag = spOf(d) === 'cheat' ? '[Cheat] ' : '[Serveur] ';
-  if (t === 'messages') alert2(tag + nm(d.author), bodyOf(d), sv('discussion'));
-  else if (t === 'files') alert2(tag + 'Nouveau fichier', `${nm(d.author)} a partagé « ${String(d.name || '')} »`, sv('fichiers'));
-  else if (t === 'events') alert2(tag + 'Nouveau rendez-vous', `${String(d.title || '')}, ${fmtDate(d.ev_date).w}`, sv('planning'));
+  if (t === 'messages') QG.notify(tag + nm(d.author), String(d.body || ''), sv('discussion'));
+  else if (t === 'files') QG.notify(tag + 'Nouveau fichier', `${nm(d.author)} a partagé « ${String(d.name || '')} »`, sv('fichiers'));
+  else if (t === 'events') QG.notify(tag + 'Nouveau rendez-vous', `${String(d.title || '')}, ${fmtDate(d.ev_date).w}`, sv('planning'));
 }
 async function refreshThumbs() {
   const now = Date.now();
@@ -269,8 +267,8 @@ function vNotes() {
 function vChat() {
   const ms = [...SP('messages')].reverse();
   return `<div class="bar"><div><h2>Discussion</h2><p class="sub">Les 150 derniers messages de l'équipe.</p></div></div>
-<div class="chat" id="chatlog">${ms.map(m => `<div class="msg${m.author === me ? ' me' : ''}"><div class="who">${esc(nm(m.author))} <span>${esc(ago(m.at))}</span>${rxAdd('msg', m.id)}${m.author === me ? `<button class="x" data-act="delmsg" data-id="${esc(m.id)}" aria-label="Supprimer le message">×</button>` : ''}</div>${msgImg(m.img)}${m.body ? `<div class="txt">${esc(m.body)}</div>` : ''}${rxBar('msg', m.id)}</div>`).join('') || '<p class="empty">Lance la conversation.</p>'}</div>
-${imgQueue('chat')}<form class="send" id="chatf">${imgPick('cimgin')}<textarea id="ctext" rows="2" maxlength="4000" placeholder="Écris un message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne, glisse ou colle une image)" aria-label="Message"></textarea><button class="pri">Envoyer</button></form>`
+<div class="chat" id="chatlog">${ms.map(m => `<div class="msg${m.author === me ? ' me' : ''}"><div class="who">${esc(nm(m.author))} <span>${esc(ago(m.at))}</span>${m.author === me ? `<button class="x" data-act="delmsg" data-id="${esc(m.id)}" aria-label="Supprimer le message">×</button>` : ''}</div><div class="txt">${esc(m.body)}</div></div>`).join('') || '<p class="empty">Lance la conversation.</p>'}</div>
+<form class="send" id="chatf"><textarea id="ctext" rows="2" maxlength="4000" placeholder="Écris un message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)" aria-label="Message"></textarea><button class="pri">Envoyer</button></form>`
 }
 function vTeam() {
   return `<div class="bar"><div><h2>Équipe</h2><p class="sub">Les membres de l'équipe.</p></div></div>
@@ -292,21 +290,21 @@ function vSettings() {
 </div>`
 }
 
-const V = { accueil: vHome, fichiers: vFiles, taches: vTasks, planning: vPlan, notes: vNotes, discussion: vChat, equipe: vTeam, vocal: vVoice, remote: vRemote, parametres: vSettings, notifications: vNotifs };
+const V = { accueil: vHome, fichiers: vFiles, taches: vTasks, planning: vPlan, notes: vNotes, discussion: vChat, equipe: vTeam, remote: vRemote, parametres: vSettings, notifications: vNotifs };
 function render(fresh) {
   const main = $('#main'); const a = document.activeElement; const keep = {};
   if (!fresh) main.querySelectorAll('[data-dirty]').forEach(el => { if (el.id) keep[el.id] = el.value });
   const fid = !fresh && a && main.contains(a) && a.id ? a.id : null; let s0 = null, s1 = null; try { s0 = a.selectionStart; s1 = a.selectionEnd } catch {}
   const ch = $('#chatlog'); const atBot = !ch || ch.scrollHeight - ch.scrollTop - ch.clientHeight < 80;
   $('#shell').classList.toggle('gate-mode', phase !== 'app');
-  if (phase === 'app') { renderMe(); const T = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion', equipe: 'Équipe' }; $('#pgtitle').textContent = view === 'equipe' ? 'Équipe' : view === 'remote' ? 'Contrôle à distance' : view === 'vocal' ? 'Salon vocal' : view === 'parametres' ? 'Paramètres' : view === 'notifications' ? 'Notifications' : `${SPACES[space].label}  ·  ${T[view] || ''}` }
+  if (phase === 'app') { const n = names[me] || ''; $('#mebox').innerHTML = `<div class="av">${esc((n[0] || '?').toUpperCase())}</div><span><b>${esc(n || 'Moi')}</b><small>Membre de l'équipe</small></span>`; const T = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion', equipe: 'Équipe' }; $('#pgtitle').textContent = view === 'equipe' ? 'Équipe' : view === 'remote' ? 'Contrôle à distance' : view === 'parametres' ? 'Paramètres' : view === 'notifications' ? 'Notifications' : `${SPACES[space].label}  ·  ${T[view] || ''}` }
   main.innerHTML = phase === 'setup' ? vSetup() : phase === 'auth' ? vAuth() : phase === 'app' ? ((!spaceReady && !GLOBAL.includes(view) ? `<div class="notice" style="margin-bottom:14px">Pour séparer Serveur GTA 6 et Cheat, lance le fichier <b>supabase-update-0.2.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l'appli. En attendant, tu ne peux rien ajouter.</div>` : '') + V[view]()) : '<p class="empty">Connexion…</p>';
   for (const k in keep) { const el = document.getElementById(k); if (el) { try { el.value = keep[k]; el.dataset.dirty = 1 } catch {} } }
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus({ preventScroll: true }); try { if (s0 != null) el.setSelectionRange(s0, s1) } catch {} } }
   const c = $('#chatlog'); if (c && atBot) c.scrollTop = c.scrollHeight;
   updateNotifBadge();
   const slot = $('#rcslot'); if (slot) { slot.appendChild(rcVideo); if (rcVideo.srcObject) rcVideo.play().catch(() => {}) }
-  renderDM(); vcSide(); vcPaint();
+  renderDM();
 }
 // ---------- Menu latéral : deux catégories repliables ----------
 const ICONS = {
@@ -319,7 +317,6 @@ const ICONS = {
   equipe: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
   notifications: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   parametres: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
-  vocal: '<path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="5" height="7" rx="1.5"/><rect x="16" y="14" width="5" height="7" rx="1.5"/>',
   remote: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="m10 9 4 2.5-4 2.5z"/>',
   serveur: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
   cheat: '<path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z"/><path d="m9.5 12 2 2 3.5-4"/>'
@@ -332,7 +329,7 @@ function buildSide() {
   nav.innerHTML = Object.entries(SPACES).map(([id, s]) => { let closed = false; try { closed = localStorage.getItem('qg.grp.' + id) === '0' } catch {}
     return `<div class="grp g-${id}${closed ? ' closed' : ''}" data-g="${id}"><button class="gh" data-grp="${id}" aria-expanded="${!closed}">${svg(ICONS[id])}<span><b>${s.label}</b><small>${s.sub}</small></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
 <nav class="gl" aria-label="${s.label}">${Object.entries(LABELS).map(([v, l]) => `<a href="#${id}-${v}">${svg(ICONS[v])}<span>${l}</span></a>`).join('')}</nav></div>` }).join('')
-    + `<div class="slabel">Général</div><nav aria-label="Général"><a href="#vocal">${svg(ICONS.vocal)}<span>Salon vocal</span></a><div class="vcside" id="vcside"></div><a href="#remote">${svg(ICONS.remote)}<span>Contrôle à distance</span></a><a href="#notifications">${svg(ICONS.notifications)}<span>Notifications</span><b class="badge nbadge" id="nbadge" hidden></b></a><a href="#equipe">${svg(ICONS.equipe)}<span>Équipe</span></a><a href="#parametres">${svg(ICONS.parametres)}<span>Paramètres</span></a></nav>`;
+    + `<div class="slabel">Général</div><nav aria-label="Général"><a href="#remote">${svg(ICONS.remote)}<span>Contrôle à distance</span></a><a href="#notifications">${svg(ICONS.notifications)}<span>Notifications</span><b class="badge nbadge" id="nbadge" hidden></b></a><a href="#equipe">${svg(ICONS.equipe)}<span>Équipe</span></a><a href="#parametres">${svg(ICONS.parametres)}<span>Paramètres</span></a></nav>`;
   nav.addEventListener('click', e => { const b = e.target.closest('[data-grp]'); if (b) { e.preventDefault(); toggleGrp(b.dataset.grp) } });
 }
 buildSide();
@@ -340,8 +337,8 @@ buildSide();
 // ---------- Messages privés (panneau de droite) ----------
 const unreadFrom = id => S.dms.filter(d => d.recipient === me && d.sender === id && !d.read_at).length;
 const unreadAll = () => S.dms.filter(d => d.recipient === me && !d.read_at).length;
-const seenText = m => online.has(m.user_id) ? STATUS[statusOf(m.user_id)].l : (m.last_seen ? 'Vu ' + ago(m.last_seen) : 'Hors ligne');
-const avatar = (id, big) => `<span class="av${big ? ' big' : ''}${online.has(id) ? ' on st-' + statusOf(id) : ''}">${esc((nm(id)[0] || '?').toUpperCase())}</span>`;
+const seenText = m => online.has(m.user_id) ? 'En ligne' : (m.last_seen ? 'Vu ' + ago(m.last_seen) : 'Hors ligne');
+const avatar = (id, big) => `<span class="av${big ? ' big' : ''}${online.has(id) ? ' on' : ''}">${esc((nm(id)[0] || '?').toUpperCase())}</span>`;
 function markRead() {
   if (!dmOpen || !dmWith || !document.hasFocus()) return;
   const ids = S.dms.filter(d => d.recipient === me && d.sender === dmWith && !d.read_at).map(d => d.id);
@@ -367,14 +364,14 @@ function renderDM() {
     const nOn = others.filter(m => online.has(m.user_id)).length;
     box.innerHTML = `<div class="dmhead"><b>Messages</b><span class="sub">${nOn} en ligne</span><button class="x" data-dm="close" aria-label="Fermer le panneau">×</button></div>
 <div class="dmlist">${others.map(m => { const last = S.dms.filter(d => (d.sender === m.user_id && d.recipient === me) || (d.sender === me && d.recipient === m.user_id)).sort((x, y) => ts(y.at) - ts(x.at))[0]; const u = unreadFrom(m.user_id);
-  return `<button class="dmrow" data-dm="open" data-id="${esc(m.user_id)}">${avatar(m.user_id)}<span class="dmmid"><b>${esc(m.name)}</b><small>${last ? esc((last.sender === me ? 'Toi : ' : '') + bodyOf(last).slice(0, 40)) : esc(seenText(m))}</small></span>${u ? `<b class="badge">${u}</b>` : ''}</button>` }).join('') || '<p class="dmempty">Invite des membres pour discuter en privé.</p>'}</div>`;
+  return `<button class="dmrow" data-dm="open" data-id="${esc(m.user_id)}">${avatar(m.user_id)}<span class="dmmid"><b>${esc(m.name)}</b><small>${last ? esc((last.sender === me ? 'Toi : ' : '') + String(last.body).slice(0, 40)) : esc(seenText(m))}</small></span>${u ? `<b class="badge">${u}</b>` : ''}</button>` }).join('') || '<p class="dmempty">Invite des membres pour discuter en privé.</p>'}</div>`;
     return;
   }
   const m = members.find(x => x.user_id === dmWith) || { user_id: dmWith, name: nm(dmWith) };
   const conv = S.dms.filter(d => (d.sender === dmWith && d.recipient === me) || (d.sender === me && d.recipient === dmWith)).slice().sort((x, y) => ts(x.at) - ts(y.at));
   box.innerHTML = `<div class="dmhead"><button class="x" data-dm="back" aria-label="Retour">‹</button>${avatar(dmWith, true)}<span class="dmmid"><b>${esc(m.name)}</b><small>${esc(seenText(m))}</small></span><button class="x" data-dm="close" aria-label="Fermer le panneau">×</button></div>
-<div class="dmlog" id="dmlog">${conv.map(d => `<div class="dmmsg${d.sender === me ? ' me' : ''}"><div class="dmb">${msgImg(d.img)}${d.body ? `<div class="dmtxt">${esc(d.body)}</div>` : ''}${rxAdd('dm', d.id)}</div>${rxBar('dm', d.id)}<small>${esc(ago(d.at))}${d.sender === me && d.read_at ? ' · lu' : ''}</small></div>`).join('') || `<p class="dmempty">Commence la discussion avec ${esc(m.name)}.</p>`}</div>
-${imgQueue('dm')}<form class="dmsend" id="dmf">${imgPick('dmimgin')}<textarea id="dmtext" rows="2" maxlength="4000" placeholder="Message à ${esc(m.name)}… (tu peux coller une image)" aria-label="Message privé"></textarea><button class="pri" aria-label="Envoyer">Envoyer</button></form>`;
+<div class="dmlog" id="dmlog">${conv.map(d => `<div class="dmmsg${d.sender === me ? ' me' : ''}"><div class="dmtxt">${esc(d.body)}</div><small>${esc(ago(d.at))}${d.sender === me && d.read_at ? ' · lu' : ''}</small></div>`).join('') || `<p class="dmempty">Commence la discussion avec ${esc(m.name)}.</p>`}</div>
+<form class="dmsend" id="dmf"><textarea id="dmtext" rows="2" maxlength="4000" placeholder="Message à ${esc(m.name)}…" aria-label="Message privé"></textarea><button class="pri" aria-label="Envoyer">Envoyer</button></form>`;
   const ta = $('#dmtext'); ta.value = dmDraft; if (hadFocus) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length) }
   const lg = $('#dmlog'); if (lg && atBot) lg.scrollTop = lg.scrollHeight;
 }
@@ -385,14 +382,11 @@ $('#dm').addEventListener('click', e => { const b = e.target.closest('[data-dm]'
 $('#dm').addEventListener('input', e => { if (e.target.id === 'dmtext') dmDraft = e.target.value });
 $('#dm').addEventListener('keydown', e => { if (e.target.id === 'dmtext' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.target.form.requestSubmit() } });
 $('#dm').addEventListener('submit', async e => {
-  e.preventDefault(); const text = dmDraft.trim(); const imgs = pend.dm.splice(0); if ((!text && !imgs.length) || !dmWith) return;
-  const to = dmWith; dmDraft = ''; const t = $('#dmtext'); if (t) t.value = ''; if (imgs.length) renderDM();
-  const ok = await sendWithImages(text, imgs, async (body, img) => {
-    const row = { sender: me, recipient: to, body: body.slice(0, 4000) }; if (img) row.img = img;
-    const { data, error } = await sb.from('dms').insert(row).select().single();
-    if (error) { toast(sqlHint(error)); return false }
-    if (data && !S.dms.some(d => d.id === data.id)) S.dms.unshift(data); ensureImgs(); renderDM(); return true });
-  if (!ok && text) { dmDraft = text; renderDM() }
+  e.preventDefault(); const text = dmDraft.trim(); if (!text || !dmWith) return;
+  const to = dmWith; dmDraft = ''; const t = $('#dmtext'); if (t) t.value = '';
+  const { data, error } = await sb.from('dms').insert({ sender: me, recipient: to, body: text.slice(0, 4000) }).select().single();
+  if (error) { dmDraft = text; toast(errMsg(error)); return renderDM() }
+  if (data && !S.dms.some(d => d.id === data.id)) S.dms.unshift(data); renderDM();
 });
 $('#dmtoggle').addEventListener('click', () => setDmOpen(!dmOpen));
 window.addEventListener('focus', () => { markRead(); renderDM() });
@@ -519,12 +513,7 @@ async function act(a, id, el) {
     case 'openfile': { const f = find('files'); if (f) openFile(f); return }
     case 'copy': { const f = find('files'); const u = f && fileUrl(f); if (!u) return; try { await navigator.clipboard.writeText(u); toast('Lien copié') } catch { toast('Copie impossible') } return }
     case 'delfile': { const f = find('files'); if (!f) return; return confirmDel(`« ${f.name} »`, async () => { if (f.path && f.kind === 'upload') await sb.storage.from('files').remove([f.path]); return W('files', sb.from('files').delete().eq('id', id)) }) }
-    case 'delmsg': { const m = find('messages'); const ok = await W('messages', sb.from('messages').delete().eq('id', id)); if (ok && m && m.img) sb.storage.from('files').remove([m.img]).then(() => {}, () => {}); return ok }
-    case 'unimg': pend.chat.splice(+id, 1); return render();
-    case 'vcjoin': return vcJoin();
-    case 'vcleave': return vcLeave();
-    case 'vcmute': return vcMute();
-    case 'vcdeaf': return vcDeaf();
+    case 'delmsg': return W('messages', sb.from('messages').delete().eq('id', id));
     case 'checkupd': if (updVersion) return QG.installUpdate(); { const ok = await QG.checkUpdates(); return toast(ok ? 'Recherche en cours. Si une nouvelle version existe, elle se télécharge en arrière-plan.' : 'Les mises à jour ne sont pas disponibles dans cette version de test.') }
     case 'dmto': return openDm(id);
     case 'nreadall': return markAllNotifs();
@@ -561,10 +550,8 @@ async function onForm(e) {
       authTab = 'login'; authMsg = "Compte créé ! Clique sur le lien de confirmation reçu par e-mail, puis connecte-toi ici."; return render(true);
     }
     if (f.id === 'chatf') {
-      const ta = $('#ctext'); const text = ta.value.trim(); const imgs = pend.chat.splice(0); if (!text && !imgs.length) return; ta.value = ''; delete ta.dataset.dirty; if (imgs.length) render();
-      const sp = space;
-      const ok = await sendWithImages(text, imgs, async (body, img) => { const row = { body: body.slice(0, 4000), space: sp }; if (img) row.img = img; const { error } = await sb.from('messages').insert(row); if (error) { toast(sqlHint(error)); return false } reload('messages'); return true });
-      if (!ok && text) { const t2 = $('#ctext'); if (t2) { t2.value = text; t2.dataset.dirty = 1 } } return;
+      const ta = $('#ctext'); const text = ta.value.trim(); if (!text) return; ta.value = ''; delete ta.dataset.dirty;
+      if (!await W('messages', sb.from('messages').insert({ body: text.slice(0, 4000), space }))) { const t2 = $('#ctext'); if (t2) { t2.value = text; t2.dataset.dirty = 1 } } return;
     }
     if (f.id === 'namef') { const n = String(v.name).trim().slice(0, 40); if (!n) return; if (await W('members', sb.from('members').update({ name: n }).eq('user_id', me))) { names[me] = n; toast('Pseudo mis à jour'); loadMembers() } }
   } finally { if (btn) btn.disabled = false }
@@ -575,7 +562,6 @@ main.addEventListener('click', e => { const b = e.target.closest('[data-act]'); 
 main.addEventListener('submit', onForm);
 main.addEventListener('input', e => { const t = e.target; if (t.id && t.type !== 'file' && t.type !== 'password') t.dataset.dirty = 1; if (t.id === 'fq') { fileQ = t.value; render() } if (t.id === 'nq') { noteQ = t.value; render() } });
 main.addEventListener('change', e => { const t = e.target; if (t.id === 'upin' && t.files.length) { const l = [...t.files]; t.value = ''; uploadFiles(l) }
-  if (t.id === 'cimgin' && t.files.length) { const l = [...t.files]; t.value = ''; addImgs('chat', l) } if (t.id === 'vcmic') vcSetMic(t.value);
   if (t.id === 'goin' && t.files.length) { const l = [...t.files]; t.value = ''; const folder = ($('#upFolder') || {}).value || 'Autre'; (async () => { for (const f of l) await goUpload(f, folder) })() } if (t.id === 'ntag' || t.id === 'upFolder') t.dataset.dirty = 1 });
 main.addEventListener('keydown', e => {
   const t = e.target;
@@ -583,11 +569,9 @@ main.addEventListener('keydown', e => {
   if ((t.id === 'nbody' || t.id === 'ntitle') && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); const b = main.querySelector('[data-act=savenote]'); if (b) saveNote(b.dataset.id) }
   if (t.tagName === 'LABEL' && (t.htmlFor === 'upin' || t.htmlFor === 'goin') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); $('#' + t.htmlFor).click() }
 });
-main.addEventListener('dragover', e => { if (phase !== 'app' || (view !== 'fichiers' && view !== 'discussion')) return; e.preventDefault(); main.classList.add('drop') });
+main.addEventListener('dragover', e => { if (phase !== 'app' || view !== 'fichiers') return; e.preventDefault(); main.classList.add('drop') });
 main.addEventListener('dragleave', e => { if (e.target === main) main.classList.remove('drop') });
-main.addEventListener('drop', e => { if (phase !== 'app' || (view !== 'fichiers' && view !== 'discussion')) return; e.preventDefault(); main.classList.remove('drop'); const l = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (!l.length) return; if (view === 'discussion') addImgs('chat', l); else uploadFiles(l) });
-main.addEventListener('paste', e => { if (e.target.id !== 'ctext') return; const l = [...(e.clipboardData && e.clipboardData.files || [])].filter(isImg); if (l.length) { e.preventDefault(); addImgs('chat', l) } });
-main.addEventListener('input', e => { if (e.target.classList && e.target.classList.contains('vcvol')) vcVolume(e.target.dataset.id, +e.target.value) });
+main.addEventListener('drop', e => { if (phase !== 'app' || view !== 'fichiers') return; e.preventDefault(); main.classList.remove('drop'); const l = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (l.length) uploadFiles(l) });
 document.addEventListener('dragover', e => e.preventDefault()); document.addEventListener('drop', e => e.preventDefault());
 window.addEventListener('hashchange', () => { if (phase === 'app') route() });
 QG.onNav(v => { if (typeof v !== 'string') return; if (v.startsWith('dm:')) return openDm(v.slice(3)); if (/^(serveur|cheat)-[a-z]+$/.test(v)) { location.hash = v; return } if (VIEWS.includes(v)) location.hash = hrefOf(v) });
@@ -606,7 +590,7 @@ QG.updateStatus().then(v => { if (v) showUpdate(v) }).catch(() => {});
 // ---------- Son et notifications ----------
 let actx = null;
 function ping(kind) {
-  if (!soundOn || myStatus === 'dnd') return;
+  if (!soundOn) return;
   try {
     actx = actx || new AudioContext();
     if (actx.state === 'suspended') actx.resume();
@@ -798,285 +782,6 @@ function vRemote() {
 <span class="row"><button class="sm" data-act="rcview" data-id="${esc(m.user_id)}"${on ? '' : ' disabled'}>Voir l'écran</button><button class="sm pri" data-act="rcctl" data-id="${esc(m.user_id)}"${on ? '' : ' disabled'}>Prendre le contrôle</button></span></div>` }).join('') || '<p class="empty">Invite des membres pour utiliser le contrôle à distance.</p>'}</section>
 <section class="panel"><h3>Comment ça marche</h3><div class="li"><b class="d">1</b><span>Tu envoies une demande à un membre en ligne.</span></div><div class="li"><b class="d">2</b><span>Il accepte ou refuse. Rien ne se passe sans son accord, et il peut n'autoriser que la vue.</span></div><div class="li"><b class="d">3</b><span>L'image passe directement entre vos deux PC, sans serveur au milieu.</span></div><div class="li"><b class="d">4</b><span>Chacun peut tout arrêter à tout moment. Chez lui, un bandeau rouge reste visible pendant la session.</span></div></section>
 </div>`;
-}
-
-// ---------- Statut perso ----------
-const STATUS = { dispo: { l: 'Disponible' }, code: { l: 'En train de coder' }, afk: { l: 'AFK' }, dnd: { l: 'Ne pas déranger' } };
-const statusOf = id => { const s = id === me ? myStatus : (presMeta[id] || {}).status; return STATUS[s] ? s : 'dispo' };
-const alert2 = (...a) => { if (myStatus !== 'dnd') QG.notify(...a) };
-const bodyOf = d => String((d && d.body) || (d && d.img ? '📷 Image' : ''));
-function renderMe() {
-  const box = $('#mebox'); if (!box || phase !== 'app') return;
-  const n = names[me] || '', s = statusOf(me);
-  box.innerHTML = `<button class="mebtn" id="mestat" aria-haspopup="menu" aria-label="Changer mon statut"><span class="av on st-${s}">${esc((n[0] || '?').toUpperCase())}</span><span><b>${esc(n || 'Moi')}</b><small>${esc(STATUS[s].l)}</small></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>`;
-}
-function setStatus(s) {
-  if (!STATUS[s]) return; myStatus = s; try { localStorage.setItem('qg.status', s) } catch {}
-  if (pres) pres.track({ at: Date.now(), status: s }).catch(() => {});
-  closePop(); renderMe(); renderDM();
-  if (s === 'dnd') toast('Ne pas déranger : plus de son ni de notification Windows.');
-}
-let pop = null;
-function closePop() { if (pop) { pop.remove(); pop = null } }
-function openPop(anchor, html, cls) {
-  closePop(); pop = document.createElement('div'); pop.className = 'pop ' + (cls || ''); pop.setAttribute('role', 'menu'); pop.innerHTML = html; document.body.appendChild(pop);
-  const r = anchor.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
-  let x = Math.min(Math.max(8, r.left), innerWidth - pw - 8), y = r.top - ph - 6; if (y < 8) y = r.bottom + 6;
-  pop.style.left = x + 'px'; pop.style.top = y + 'px';
-  const f = pop.querySelector('button'); if (f) f.focus();
-}
-function statusMenu(anchor) {
-  openPop(anchor, Object.entries(STATUS).map(([k, v]) => `<button role="menuitemradio" aria-checked="${k === myStatus}" data-st="${k}"><i class="sd st-${k}"></i>${esc(v.l)}${k === 'dnd' ? '<small>Coupe les sons et notifications</small>' : ''}</button>`).join(''), 'stpop');
-}
-
-// ---------- Réactions emoji ----------
-const EMO = ['👍', '❤️', '😂', '🔥', '😮', '😢', '👀', '✅'];
-const rxTarget = r => r.msg || r.dm;
-const SMILE = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg>';
-const rxAdd = (k, id) => reactReady ? `<button class="rxadd" data-rxadd="${k}" data-id="${esc(id)}" aria-label="Ajouter une réaction" title="Réagir">${SMILE}</button>` : '';
-function rxBar(k, id) {
-  if (!reactReady) return '';
-  const g = {}; for (const r of S.reactions) if (rxTarget(r) === id) (g[r.emoji] = g[r.emoji] || []).push(r.user_id);
-  const ks = EMO.filter(e => g[e]).concat(Object.keys(g).filter(e => !EMO.includes(e)));
-  if (!ks.length) return '';
-  return `<div class="rxs">${ks.map(e => { const us = g[e]; return `<button class="rx${us.includes(me) ? ' mine' : ''}" data-rx="${k}" data-id="${esc(id)}" data-e="${esc(e)}" title="${esc(us.map(nm).join(', '))}" aria-pressed="${us.includes(me)}">${esc(e)}<b>${us.length}</b></button>` }).join('')}</div>`;
-}
-const rerender = k => k === 'dm' ? renderDM() : render();
-async function toggleReact(k, id, e) {
-  closePop(); if (!EMO.includes(e) && !S.reactions.some(r => r.emoji === e)) return;
-  const mine = S.reactions.find(r => rxTarget(r) === id && r.user_id === me && r.emoji === e);
-  if (mine) {
-    S.reactions = S.reactions.filter(r => r !== mine); rerender(k);
-    const { error } = await sb.from('reactions').delete().eq('id', mine.id); if (error) { toast(errMsg(error)); reload('reactions') } return;
-  }
-  const row = { user_id: me, emoji: e }; row[k === 'dm' ? 'dm' : 'msg'] = id;
-  const tmp = { ...row, id: 'tmp' + Math.random(), at: new Date().toISOString() }; S.reactions.unshift(tmp); rerender(k);
-  const { data, error } = await sb.from('reactions').insert(row).select().single();
-  S.reactions = S.reactions.filter(r => r !== tmp);
-  if (error) { toast(sqlHint(error)); reload('reactions'); return rerender(k) }
-  if (data && !S.reactions.some(r => r.id === data.id)) S.reactions.unshift(data); rerender(k);
-}
-function rxMenu(anchor, k, id) { openPop(anchor, EMO.map(e => `<button data-rxe="${esc(e)}" data-k="${k}" data-id="${esc(id)}" aria-label="Réagir ${e}">${e}</button>`).join(''), 'rxpop') }
-const sqlHint = e => /column|schema cache|relation|does not exist|violates check/i.test(String(e && e.message || '')) ? 'Mise à jour du serveur nécessaire : lance supabase-update-0.4.sql dans Supabase > SQL Editor.' : errMsg(e);
-
-// ---------- Images dans la discussion ----------
-const pend = { chat: [], dm: [] }, imgs = {}, imgWait = new Set();
-const IMG_MAX = 10 * 1048576;
-const isImg = f => f && /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(f.type || '');
-const IMGI = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>';
-const imgPick = id => `<label class="imgbtn" for="${id}" tabindex="0" title="Envoyer une image" aria-label="Envoyer une image">${IMGI}</label><input type="file" id="${id}" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>`;
-const imgQueue = k => pend[k].length ? `<div class="imgq">${pend[k].map((p, i) => `<span class="qimg"><img src="${esc(p.url)}" alt="${esc(p.file.name)}"><button type="button" class="x" ${k === 'dm' ? 'data-dm="unimg"' : 'data-act="unimg"'} data-id="${i}" aria-label="Retirer l'image">×</button></span>`).join('')}<small>${pend[k].length > 1 ? pend[k].length + ' images prêtes' : 'Image prête'} : ajoute un texte si tu veux, puis Envoyer.</small></div>` : '';
-function addImgs(k, list) {
-  let bad = 0, big = 0;
-  for (const f of list) { if (!isImg(f)) { bad++; continue } if (f.size > IMG_MAX) { big++; continue } if (pend[k].length >= 6) break; pend[k].push({ file: f, url: URL.createObjectURL(f) }) }
-  if (big) toast('Image trop lourde (10 Mo max). Pour les gros fichiers, passe par l’onglet Fichiers.'); else if (bad) toast('Seules les images (PNG, JPG, GIF, WebP) vont dans la discussion.');
-  rerender(k); const t = $(k === 'dm' ? '#dmtext' : '#ctext'); if (t) t.focus();
-}
-async function upImg(f) {
-  const safe = f.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.\-]+/g, '_').slice(-80) || 'image';
-  const path = `chat/${crypto.randomUUID()}/${safe}`;
-  const { error } = await sb.storage.from('files').upload(path, f, { contentType: f.type, upsert: false });
-  if (error) { toast(`Image non envoyée : ${errMsg(error)}`); return null }
-  imgs[path] = { u: URL.createObjectURL(f), exp: Date.now() + 864e5 };
-  return path;
-}
-async function sendWithImages(text, list, insert) {
-  if (!list.length) return insert(text, null);
-  let textSent = !text, okAny = false;
-  if (list.length) toast(list.length > 1 ? `Envoi de ${list.length} images…` : 'Envoi de l’image…');
-  for (const p of list) {
-    const path = await upImg(p.file); URL.revokeObjectURL(p.url); if (!path) continue;
-    if (await insert(textSent ? '' : text, path)) { textSent = true; okAny = true } else sb.storage.from('files').remove([path]).then(() => {}, () => {});
-  }
-  if (!textSent) return insert(text, null);
-  return okAny || textSent;
-}
-const okImgPath = p => typeof p === 'string' && /^chat\/[\w-]+\/[\w.\-]+$/.test(p);
-const msgImg = p => !okImgPath(p) ? '' : imgs[p] ? `<button class="cimgb" data-img="${esc(p)}" aria-label="Agrandir l'image"><img class="cimg" src="${esc(imgs[p].u)}" alt="Image envoyée"></button>` : '<span class="cimg ph" aria-label="Chargement de l’image"></span>';
-async function ensureImgs() {
-  const now = Date.now();
-  const todo = [...new Set([...S.messages, ...S.dms].map(m => m.img).filter(okImgPath))].filter(p => !(imgs[p] && imgs[p].exp > now + 6e4) && !imgWait.has(p)).slice(0, 100);
-  if (!todo.length || !sb) return; todo.forEach(p => imgWait.add(p));
-  try { const { data } = await sb.storage.from('files').createSignedUrls(todo, 3600); (data || []).forEach(d => { if (d && d.signedUrl && d.path) imgs[d.path] = { u: d.signedUrl, exp: now + 3500e3 } }) } catch {}
-  todo.forEach(p => imgWait.delete(p)); if (phase === 'app') { if (view === 'discussion') render(); renderDM() }
-}
-setInterval(() => { if (phase === 'app') ensureImgs() }, 300000);
-function lightbox(p) {
-  let lb = $('#lbox'); if (!lb) { lb = document.createElement('div'); lb.id = 'lbox'; document.body.appendChild(lb) }
-  lb.innerHTML = `<div class="lbin"><img src="${esc(imgs[p] ? imgs[p].u : '')}" alt="Image en grand"><div class="row end"><button data-lb="dl" data-img="${esc(p)}">Télécharger</button><button class="pri" data-lb="close">Fermer</button></div></div>`;
-  lb.hidden = false; lb.querySelector('[data-lb=close]').focus();
-}
-async function dlImg(p) { const { data, error } = await sb.storage.from('files').createSignedUrl(p, 600, { download: p.split('/').pop() }); if (error || !data) return toast(errMsg(error)); QG.openExternal(data.signedUrl) }
-
-// Clics globaux : statut, réactions, images
-document.addEventListener('click', e => {
-  const t = e.target;
-  if (pop && !pop.contains(t) && !t.closest('#mestat,[data-rxadd]')) closePop();
-  const ms = t.closest('#mestat'); if (ms) { e.preventDefault(); return pop && pop.classList.contains('stpop') ? closePop() : statusMenu(ms) }
-  const st = t.closest('[data-st]'); if (st) { e.preventDefault(); return setStatus(st.dataset.st) }
-  const ad = t.closest('[data-rxadd]'); if (ad) { e.preventDefault(); return pop && pop.classList.contains('rxpop') && pop.dataset.id === ad.dataset.id ? closePop() : (rxMenu(ad, ad.dataset.rxadd, ad.dataset.id), pop.dataset.id = ad.dataset.id) }
-  const re = t.closest('[data-rxe]'); if (re) { e.preventDefault(); return toggleReact(re.dataset.k, re.dataset.id, re.dataset.rxe) }
-  const rx = t.closest('[data-rx]'); if (rx) { e.preventDefault(); return toggleReact(rx.dataset.rx, rx.dataset.id, rx.dataset.e) }
-  const lb = t.closest('[data-lb]'); if (lb) { e.preventDefault(); if (lb.dataset.lb === 'dl') return dlImg(lb.dataset.img); $('#lbox').hidden = true; return }
-  if (t.id === 'lbox') { $('#lbox').hidden = true; return }
-  const im = t.closest('[data-img]'); if (im) { e.preventDefault(); return lightbox(im.dataset.img) }
-});
-document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape') return;
-  if (pop) { closePop(); return }
-  const lb = $('#lbox'); if (lb && !lb.hidden) lb.hidden = true;
-});
-document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('imgbtn')) { e.preventDefault(); const i = document.getElementById(e.target.htmlFor); if (i) i.click() } });
-window.addEventListener('resize', closePop);
-// garde la discussion en bas quand une image finit de charger
-document.addEventListener('load', e => { if (e.target.tagName !== 'IMG') return; const l = e.target.closest('#chatlog,#dmlog'); if (l && l.scrollHeight - l.scrollTop - l.clientHeight < e.target.clientHeight + 120) l.scrollTop = l.scrollHeight }, true);
-$('#dm').addEventListener('change', e => { if (e.target.id === 'dmimgin' && e.target.files.length) { const l = [...e.target.files]; e.target.value = ''; addImgs('dm', l) } });
-$('#dm').addEventListener('paste', e => { if (e.target.id !== 'dmtext') return; const l = [...(e.clipboardData && e.clipboardData.files || [])].filter(isImg); if (l.length) { e.preventDefault(); addImgs('dm', l) } });
-$('#dm').addEventListener('dragover', e => { if (!dmWith) return; e.preventDefault(); e.stopPropagation(); $('#dm').classList.add('drop') });
-$('#dm').addEventListener('dragleave', e => { if (e.target.id === 'dm') $('#dm').classList.remove('drop') });
-$('#dm').addEventListener('drop', e => { $('#dm').classList.remove('drop'); if (!dmWith) return; e.preventDefault(); e.stopPropagation(); const l = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (l.length) addImgs('dm', l) });
-$('#dm').addEventListener('click', e => { const b = e.target.closest('[data-dm="unimg"]'); if (b) { e.preventDefault(); e.stopPropagation(); pend.dm.splice(+b.dataset.id, 1); renderDM() } }, true);
-
-// ---------- Salon vocal ----------
-// Le son passe directement d'un PC à l'autre (WebRTC, en maillage) ; Supabase sert juste à se trouver.
-let vc = null, vcRoom = null, vcMembers = {}, vcCtx = null, vcMic = (() => { try { return localStorage.getItem('qg.mic') || '' } catch { return '' } })(), vcMics = [];
-const vcTalk = new Set(), vcMeters = {};
-const vcVol = id => { try { const v = +localStorage.getItem('qg.vol.' + id); return isFinite(v) && v >= 0 && v <= 100 && localStorage.getItem('qg.vol.' + id) !== null ? v : 100 } catch { return 100 } };
-function vcListen() {
-  if (vcRoom) sb.removeChannel(vcRoom);
-  vcRoom = sb.channel('qg-voice', { config: { presence: { key: me }, broadcast: { self: false } } });
-  vcRoom.on('presence', { event: 'sync' }, () => {
-    const st = vcRoom.presenceState(), prev = vcMembers; vcMembers = {};
-    for (const k in st) if (members.some(m => m.user_id === k)) vcMembers[k] = (st[k] && st[k][0]) || {};
-    if (vc) { for (const k in vcMembers) if (k !== me && !prev[k]) vcTone(true); for (const k in prev) if (k !== me && !vcMembers[k]) vcTone(false); vcSync() }
-    vcSide(); if (view === 'vocal' && $('#modal').hidden) render(); vcBar();
-  }).on('broadcast', { event: 'sig' }, ({ payload }) => { if (payload && payload.to === me) vcOnSig(payload) }).subscribe();
-}
-const vcSend = (to, p) => vcRoom && vcRoom.send({ type: 'broadcast', event: 'sig', payload: { ...p, to, from: me } }).catch(() => {});
-async function vcGetMic(id) {
-  const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-  if (id) audio.deviceId = { exact: id };
-  try { return await navigator.mediaDevices.getUserMedia({ audio, video: false }) }
-  catch (e) { if (id) { try { return await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }) } catch {} } throw e }
-}
-async function vcJoin() {
-  if (vc) return;
-  let stream; try { stream = await vcGetMic(vcMic) } catch (e) {
-    return toast(/NotFound|DevicesNotFound/i.test(e.name) ? 'Aucun micro trouvé. Branche un micro puis réessaie.' : 'Micro inaccessible. Vérifie dans Windows : Paramètres > Confidentialité > Microphone, autorise les applications de bureau.') }
-  vc = { stream, peers: {}, muted: false, deaf: false };
-  vcMeter(me, stream); vcTone(true); vcListMics();
-  try { await vcRoom.track({ at: Date.now(), muted: false, deaf: false }) } catch {}
-  vcSync(); render(); vcBar();
-}
-function vcLeave() {
-  if (!vc) return; const v = vc; vc = null;
-  for (const id in v.peers) vcDrop(id, v);
-  v.stream.getTracks().forEach(t => t.stop()); vcUnmeter(me);
-  try { Promise.resolve(vcRoom.untrack()).catch(() => {}) } catch {}
-  vcTone(false); render(); vcBar();
-}
-function vcPresence() { if (vc && vcRoom) vcRoom.track({ at: Date.now(), muted: vc.muted, deaf: vc.deaf }).catch(() => {}) }
-function vcMute() { if (!vc) return; vc.muted = !vc.muted; if (!vc.muted && vc.deaf) { vc.deaf = false; vcApplyDeaf() } vc.stream.getAudioTracks().forEach(t => t.enabled = !vc.muted); vcPresence(); render(); vcBar() }
-function vcDeaf() { if (!vc) return; vc.deaf = !vc.deaf; vc.muted = vc.deaf; vc.stream.getAudioTracks().forEach(t => t.enabled = !vc.muted); vcApplyDeaf(); vcPresence(); render(); vcBar() }
-function vcApplyDeaf() { if (!vc) return; for (const id in vc.peers) vc.peers[id].audio.muted = vc.deaf }
-function vcVolume(id, v) { try { localStorage.setItem('qg.vol.' + id, String(v)) } catch {} const p = vc && vc.peers[id]; if (p) p.audio.volume = Math.max(0, Math.min(1, v / 100)); const o = document.querySelector(`[data-volout="${CSS.escape(id)}"]`); if (o) o.textContent = v + ' %' }
-function vcSync() {
-  if (!vc) return;
-  for (const id in vcMembers) if (id !== me && !vc.peers[id] && me < id) vcConnect(id, true, crypto.randomUUID());
-  for (const id in vc.peers) if (!vcMembers[id] && Date.now() - vc.peers[id].t0 > 8000) vcDrop(id);
-}
-function vcConnect(id, initiator, cid) {
-  const pc = new RTCPeerConnection({ iceServers: RC_ICE });
-  const audio = document.createElement('audio'); audio.autoplay = true; audio.hidden = true; document.body.appendChild(audio);
-  const p = { pc, audio, cid, pending: [], state: 'new', t0: Date.now() }; vc.peers[id] = p;
-  vc.stream.getTracks().forEach(t => pc.addTrack(t, vc.stream));
-  pc.ontrack = e => { const s = e.streams[0] || new MediaStream([e.track]); audio.srcObject = s; audio.muted = !!(vc && vc.deaf); audio.volume = vcVol(id) / 100; audio.play().catch(() => {}); vcMeter(id, s) };
-  pc.onicecandidate = e => { if (e.candidate) vcSend(id, { k: 'ice', cid, c: e.candidate.toJSON() }) };
-  pc.onconnectionstatechange = () => {
-    if (!vc || vc.peers[id] !== p) return; p.state = pc.connectionState;
-    if (p.state === 'failed') { vcDrop(id); if (initiator) setTimeout(() => { if (vc && vcMembers[id] && !vc.peers[id]) vcConnect(id, true, crypto.randomUUID()) }, 3000) }
-    if (view === 'vocal' && $('#modal').hidden) render();
-  };
-  if (initiator) (async () => { try { const o = await pc.createOffer(); await pc.setLocalDescription(o); vcSend(id, { k: 'offer', cid, sdp: sdpOf(o) }) } catch { vcDrop(id) } })();
-  return p;
-}
-function vcDrop(id, v = vc) { const p = v && v.peers[id]; if (!p) return; try { p.pc.close() } catch {} p.audio.srcObject = null; p.audio.remove(); delete v.peers[id]; vcUnmeter(id) }
-async function vcOnSig(s) {
-  if (!vc || !isId(s.from) || s.from === me || !members.some(m => m.user_id === s.from) || typeof s.cid !== 'string') return;
-  let p = vc.peers[s.from];
-  try {
-    if (s.k === 'offer' && s.sdp) {
-      if (p) vcDrop(s.from);
-      p = vcConnect(s.from, false, s.cid);
-      await p.pc.setRemoteDescription(s.sdp);
-      for (const c of p.pending.splice(0)) { try { await p.pc.addIceCandidate(c) } catch {} }
-      const a = await p.pc.createAnswer(); await p.pc.setLocalDescription(a); vcSend(s.from, { k: 'answer', cid: s.cid, sdp: sdpOf(a) });
-    } else if (s.k === 'answer' && p && p.cid === s.cid && s.sdp) {
-      await p.pc.setRemoteDescription(s.sdp); for (const c of p.pending.splice(0)) { try { await p.pc.addIceCandidate(c) } catch {} }
-    } else if (s.k === 'ice' && p && p.cid === s.cid && s.c) {
-      if (p.pc.remoteDescription) { try { await p.pc.addIceCandidate(s.c) } catch {} } else p.pending.push(s.c);
-    }
-  } catch { vcDrop(s.from) }
-}
-// Indicateur « en train de parler »
-function vcMeter(id, stream) {
-  vcUnmeter(id);
-  try {
-    vcCtx = vcCtx || new AudioContext(); if (vcCtx.state === 'suspended') vcCtx.resume();
-    const src = vcCtx.createMediaStreamSource(stream), an = vcCtx.createAnalyser(); an.fftSize = 512; src.connect(an);
-    const buf = new Uint8Array(an.fftSize); let hold = 0;
-    const iv = setInterval(() => {
-      an.getByteTimeDomainData(buf); let sum = 0; for (let i = 0; i < buf.length; i++) { const x = (buf[i] - 128) / 128; sum += x * x }
-      const loud = Math.sqrt(sum / buf.length) > 0.035 && !(id === me && vc && vc.muted) && !(vcMembers[id] && vcMembers[id].muted && id !== me);
-      if (loud) hold = 4; else if (hold > 0) hold--;
-      const on = hold > 0; if (on !== vcTalk.has(id)) { on ? vcTalk.add(id) : vcTalk.delete(id); vcPaint() }
-    }, 90);
-    vcMeters[id] = { src, an, iv };
-  } catch {}
-}
-function vcUnmeter(id) { const m = vcMeters[id]; if (m) { clearInterval(m.iv); try { m.src.disconnect() } catch {} delete vcMeters[id] } if (vcTalk.delete(id)) vcPaint() }
-function vcPaint() { document.querySelectorAll('[data-vc]').forEach(el => el.classList.toggle('talk', vcTalk.has(el.dataset.vc))) }
-function vcTone(up) {
-  if (!soundOn) return;
-  try { actx = actx || new AudioContext(); const t = actx.currentTime; (up ? [[523, 0], [784, 0.08]] : [[784, 0], [523, 0.08]]).forEach(([f, d]) => { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = f; g.gain.setValueAtTime(0, t + d); g.gain.linearRampToValueAtTime(0.12, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.25); o.connect(g).connect(actx.destination); o.start(t + d); o.stop(t + d + 0.3) }) } catch {}
-}
-async function vcListMics() { try { vcMics = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput' && d.deviceId) } catch { vcMics = [] } if (view === 'vocal') render() }
-async function vcSetMic(id) {
-  vcMic = id; try { localStorage.setItem('qg.mic', id) } catch {}
-  if (!vc) return;
-  let s; try { s = await vcGetMic(id) } catch { return toast('Impossible d’utiliser ce micro.') }
-  const tr = s.getAudioTracks()[0]; tr.enabled = !vc.muted;
-  for (const pid in vc.peers) { const snd = vc.peers[pid].pc.getSenders().find(x => x.track && x.track.kind === 'audio'); if (snd) snd.replaceTrack(tr).catch(() => {}) }
-  vc.stream.getTracks().forEach(t => t.stop()); vc.stream = s; vcMeter(me, s); toast('Micro changé');
-}
-const MIC = '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
-const MICX = '<svg viewBox="0 0 24 24"><path d="M15 9.3V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 5.1 2.1M5 11a7 7 0 0 0 11.5 5.4M19 11a7 7 0 0 1-.6 2.8M12 18v3M3 3l18 18"/></svg>';
-const HEAD = '<svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="5" height="7" rx="1.5"/><rect x="16" y="14" width="5" height="7" rx="1.5"/></svg>';
-const HEADX = '<svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 13.7-5.7M20 12v2"/><rect x="3" y="14" width="5" height="7" rx="1.5"/><rect x="16" y="14" width="5" height="7" rx="1.5"/><path d="M3 3l18 18"/></svg>';
-const HANG = '<svg viewBox="0 0 24 24"><path d="M3 15.5c5-4.7 13-4.7 18 0l-2.3 2.6-3.5-1.4v-2.4a10 10 0 0 0-6.4 0v2.4l-3.5 1.4z"/></svg>';
-function vcSide() {
-  const el = $('#vcside'); if (!el) return;
-  const ids = Object.keys(vcMembers);
-  el.innerHTML = ids.map(id => `<div class="vcp" data-vc="${esc(id)}">${avatar(id)}<span>${esc(nm(id))}</span>${vcMembers[id].deaf ? HEADX : vcMembers[id].muted ? MICX : ''}</div>`).join('');
-  vcPaint();
-}
-function vcBar() {
-  const el = $('#vcbar'); if (!el) return;
-  if (!vc) { el.innerHTML = ''; el.hidden = true; return }
-  const n = Object.keys(vcMembers).length || 1; el.hidden = false;
-  el.innerHTML = `<a href="#vocal" class="vcst"><b>Vocal connecté</b><small>${n} personne${n > 1 ? 's' : ''}</small></a><button class="vcb${vc.muted ? ' off' : ''}" data-vcb="mute" title="${vc.muted ? 'Réactiver le micro' : 'Couper le micro'}" aria-label="${vc.muted ? 'Réactiver le micro' : 'Couper le micro'}">${vc.muted ? MICX : MIC}</button><button class="vcb${vc.deaf ? ' off' : ''}" data-vcb="deaf" title="${vc.deaf ? 'Réactiver le son' : 'Mode sourdine'}" aria-label="${vc.deaf ? 'Réactiver le son' : 'Mode sourdine'}">${vc.deaf ? HEADX : HEAD}</button><button class="vcb hang" data-vcb="leave" title="Quitter le vocal" aria-label="Quitter le vocal">${HANG}</button>`;
-}
-$('#vcbar').addEventListener('click', e => { const b = e.target.closest('[data-vcb]'); if (!b) return; e.preventDefault(); ({ mute: vcMute, deaf: vcDeaf, leave: vcLeave })[b.dataset.vcb]() });
-window.addEventListener('beforeunload', () => { if (vc) vcLeave() });
-function vVoice() {
-  const ids = Object.keys(vcMembers); if (vc && !ids.includes(me)) ids.unshift(me);
-  const head = `<div class="bar"><div><h2>Salon vocal</h2><p class="sub">Parle avec l'équipe en direct. Le son passe directement d'un PC à l'autre.</p></div>${vc ? `<div class="row"><button class="${vc.muted ? 'pri' : ''}" data-act="vcmute">${vc.muted ? MICX + ' Réactiver le micro' : MIC + ' Couper le micro'}</button><button class="${vc.deaf ? 'pri' : ''}" data-act="vcdeaf">${vc.deaf ? HEADX + ' Réactiver le son' : HEAD + ' Sourdine'}</button><button class="danger" data-act="vcleave">Quitter</button></div>` : '<button class="pri" data-act="vcjoin">Rejoindre le vocal</button>'}</div>`;
-  const card = id => { const m = vcMembers[id] || (vc && id === me ? { muted: vc.muted, deaf: vc.deaf } : {}); const p = vc && vc.peers[id];
-    const st = id === me ? 'Toi' : !vc ? 'Dans le salon' : !p ? 'Connexion…' : p.state === 'connected' ? 'Connecté' : p.state === 'failed' ? 'Connexion impossible' : 'Connexion…';
-    return `<div class="vcard" data-vc="${esc(id)}"><span class="vav">${esc((nm(id)[0] || '?').toUpperCase())}</span><b>${esc(nm(id))}${m.deaf ? HEADX : m.muted ? MICX : ''}</b><small>${esc(st)}</small>${vc && id !== me ? `<label class="vol"><span class="vh">Volume de ${esc(nm(id))}</span><input type="range" class="vcvol" data-id="${esc(id)}" min="0" max="100" step="5" value="${vcVol(id)}"><output data-volout="${esc(id)}">${vcVol(id)} %</output></label>` : ''}</div>` };
-  const mics = vc ? `<section class="panel"><h3>Micro</h3><select id="vcmic" aria-label="Micro utilisé"><option value="">Micro par défaut de Windows</option>${vcMics.map(d => `<option value="${esc(d.deviceId)}"${d.deviceId === vcMic ? ' selected' : ''}>${esc(d.label || 'Micro')}</option>`).join('')}</select><p class="sub" style="margin-top:8px">Le son de tes amis sort sur la sortie audio par défaut de Windows. Annulation d'écho et réduction de bruit activées.</p></section>` : '';
-  return head + (ids.length ? `<div class="vgrid">${ids.map(card).join('')}</div>` : `<div class="vempty">${HEAD}<b>Personne dans le salon</b><span>Rejoins le vocal : les autres verront que tu es là, dans le menu de gauche.</span></div>`)
-    + `<div class="grid2" style="margin-top:16px">${mics}<section class="panel"><h3>Bon à savoir</h3><div class="li"><b class="d">1</b><span>Clique sur Rejoindre : Windows peut te demander l'accès au micro.</span></div><div class="li"><b class="d">2</b><span>Tu peux changer d'onglet, le vocal reste actif. Les boutons sont en bas à gauche.</span></div><div class="li"><b class="d">3</b><span>Sur certains réseaux (4G, réseau d'entreprise), la connexion directe peut échouer.</span></div></section></div>`;
 }
 
 // Boutons de fenêtre façon macOS
