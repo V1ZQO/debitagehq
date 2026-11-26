@@ -356,9 +356,11 @@ code.ic{font:12px Consolas,ui-monospace,monospace;background:rgba(255,255,255,.0
 body{background:var(--bg)}
 .shell{grid-template-columns:minmax(0,1fr) 0!important}.shell.dm-open{grid-template-columns:minmax(0,1fr) 300px!important}
 .side{display:none!important}
-.mainwrap,.sp-cheat .mainwrap{background:var(--bg)!important}
+/* 0.6.1 : retour du dégradé rouge et bleu du logo */
+.mainwrap{background:radial-gradient(70% 65% at 100% 0%,#5c0f19 0%,rgba(40,8,14,.55) 35%,rgba(14,14,18,0) 75%),radial-gradient(65% 70% at 0% 100%,#142a8a 0%,rgba(12,22,70,.5) 35%,rgba(14,14,18,0) 75%),radial-gradient(40% 35% at 78% 100%,#1a0c2a 0%,rgba(14,14,18,0) 75%),#0d0d12!important}
+.sp-cheat .mainwrap{background:radial-gradient(70% 65% at 100% 0%,#142a8a 0%,rgba(12,22,70,.55) 35%,rgba(14,14,18,0) 75%),radial-gradient(65% 70% at 0% 100%,#4a0d16 0%,rgba(40,8,14,.45) 35%,rgba(14,14,18,0) 75%),#0d0d12!important}
 /* ---- barre du haut ---- */
-.topbar.hq{height:56px;padding:0 0 0 20px;gap:20px;justify-content:flex-start;border-bottom:1px solid var(--line);position:relative;background:var(--bg)}
+.topbar.hq{height:56px;padding:0 0 0 20px;gap:20px;justify-content:flex-start;border-bottom:1px solid var(--line);position:relative;background:transparent}
 .topbar.hq::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,#e0262f,#4d6bff)}
 .hqbrand{display:flex;align-items:center;gap:9px;flex:none}.hqbrand img{width:28px;height:28px;border-radius:7px}
 .hqbrand b{font-family:'Space Grotesk',Inter,sans-serif;font-size:15px;font-weight:700;letter-spacing:-.2px}
@@ -374,7 +376,7 @@ body{background:var(--bg)}
 .hbtn{flex:none;position:relative;width:36px;height:36px;padding:0;border-radius:8px;border:0;background:transparent;color:var(--mute);display:grid;place-items:center;-webkit-app-region:no-drag;text-decoration:none}
 .hbtn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .hbtn:hover,.hbtn.on{background:var(--hover);color:var(--ink)}
-.hbtn .badge{position:absolute;top:3px;right:1px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;font-size:9.5px;line-height:14px;background:#e0262f;color:#fff;border:2px solid var(--bg);box-sizing:content-box}
+.hbtn .badge{position:absolute;top:3px;right:1px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;font-size:9.5px;line-height:14px;background:#e0262f;color:#fff;border:2px solid #0d0d12;box-sizing:content-box}
 .topbar.hq .me{margin:0 6px 0 4px;padding:0;border:0;background:none}
 .topbar.hq .mebtn{width:auto;padding:2px;border:0;background:transparent;border-radius:50%}
 .topbar.hq .mebtn .av{width:32px;height:32px;font-size:13px}.topbar.hq .mebtn .av::after{border-color:var(--bg)}
@@ -451,6 +453,90 @@ button.pri:hover{filter:brightness(1.08)}
 #dm{background:var(--side)!important;border-left:1px solid var(--line)!important}
 /* ---- fenêtres ---- */
 #mform{background:var(--panel)!important;border:1px solid var(--line2)!important;border-radius:16px!important;box-shadow:none!important}
+/* =====================================================================
+   0.7.0 : refonte complète (règles UI UX Pro Max)
+   Jetons communs : espacements 4/8, rayons 8/12/16, échelle de texte, icônes 16/18,
+   focus visible partout, retours d'état en 150 ms, mouvement réduit respecté.
+   ===================================================================== */
+:root{--r-sm:8px;--r-md:12px;--r-lg:16px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:24px;--sp-6:32px;--t-fast:150ms;--ink2:#c9c9d0}
+:focus-visible{outline:2px solid var(--acct);outline-offset:2px}
+button,.btn,a,.chip,.fold,.hrowb{transition:background-color var(--t-fast),border-color var(--t-fast),color var(--t-fast),opacity var(--t-fast)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+button,.btn{min-height:34px}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost,.btn.ghost{background:transparent;border-color:transparent;color:var(--ink2)}button.ghost:hover{background:var(--hover);color:var(--ink)}
+input,select,textarea{background:var(--field);border:1px solid var(--line2);border-radius:var(--r-sm)}
+input:focus,select:focus,textarea:focus{border-color:var(--acc)}
+.empty{color:var(--mute)!important}
+.emptyb{display:grid;justify-items:center;gap:6px;padding:48px 20px;border:1px dashed var(--line2);border-radius:var(--r-lg);text-align:center;color:var(--mute)}.emptyb b{color:var(--ink);font-size:14px}
+/* en-tête : rien d'autre que le logo avant la connexion */
+.shell.gate-mode .sseg,.shell.gate-mode .tabs,.shell.gate-mode .hbtn,.shell.gate-mode .me,.shell.gate-mode #updbox{display:none!important}
+/* pastilles des icônes du haut : hors de l'icône */
+.hbtn .badge{top:1px!important;right:-2px!important;min-width:16px!important;height:16px!important;line-height:16px!important;font-size:10px!important;padding:0 4px!important;border:2px solid #0d0d12!important}
+/* ---- Tâches ---- */
+.kanban{align-items:start}
+.col{min-height:calc(100vh - 230px)!important;border-radius:var(--r-lg)!important}
+.col .empty{padding:18px 12px!important;border:1px dashed var(--line2);border-radius:var(--r-md);text-align:center;font-size:12.5px}
+.task{position:relative;display:flex;flex-direction:column;gap:8px}
+.task .tt{font-size:13.5px;font-weight:600;line-height:1.4}
+.task .mv{position:absolute;right:10px;bottom:10px;margin:0!important;padding-left:8px;background:var(--panel2);opacity:0}
+.task:hover .mv,.task:focus-within .mv{opacity:1}
+.task .meta{min-height:24px}
+.task .hot{background:#3a1215;color:#ff9aa0;border:0}
+/* panneau latéral (détail de tâche, historique) */
+#modal.drawer{place-items:stretch end!important;padding:0!important;background:rgba(5,5,7,.55)!important}
+#modal.drawer #mform{width:min(460px,100vw)!important;max-width:none!important;height:100vh;max-height:none!important;border-radius:0!important;border-width:0 0 0 1px!important;display:flex;flex-direction:column;padding:24px!important;overflow:hidden}
+#modal.drawer #mbody{flex:1;overflow-y:auto;align-content:start;padding-right:4px}
+#modal.drawer #mtitle{font-family:'Space Grotesk',Inter,sans-serif;font-size:20px;font-weight:700;letter-spacing:-.3px;margin:0 0 6px}
+#modal.drawer .mfoot{padding-top:14px;border-top:1px solid var(--line)}
+#modal.drawer .tnotes{border-top:1px solid var(--line)}
+#modal.drawer .tnlist{max-height:none}
+/* ---- Fichiers : dossiers à gauche ---- */
+.fl2{display:grid;grid-template-columns:220px minmax(0,1fr);gap:var(--sp-5);align-items:start}
+.folders{display:flex;flex-direction:column;gap:2px;position:sticky;top:0}
+.fold{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;width:100%;height:38px;padding:0 12px;border-radius:var(--r-sm);color:var(--ink2);font-size:13px;font-weight:500;cursor:pointer}
+.fold span{color:var(--mute);font-weight:500;font-size:12px}
+.fold:hover{background:var(--hover);color:var(--ink)}.fold.on{background:var(--panel2);color:var(--ink);font-weight:600;box-shadow:inset 2px 0 0 var(--acc)}
+.fold:focus-visible{outline:2px solid var(--acct);outline-offset:1px}
+.fhelp{margin-top:var(--sp-4);padding:14px;border:1px dashed var(--line2);border-radius:var(--r-md);font-size:12px;line-height:1.55;color:var(--mute)}.fhelp b{color:var(--ink2)}
+.fmain{min-width:0;display:flex;flex-direction:column;gap:var(--sp-3)}
+.ftool{display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}.ftool .srch{flex:1;min-width:220px}
+.fdest{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mute);white-space:nowrap}.fdest select{width:auto}
+.tbl{overflow:hidden}
+@media(max-width:1000px){.fl2{grid-template-columns:1fr}.folders{flex-direction:row;flex-wrap:wrap;position:static}.fold{width:auto}.fhelp{display:none}}
+/* ---- Discussion ---- */
+.chatwrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:var(--sp-4);height:calc(100vh - 196px);min-height:360px}
+.chatcol{min-width:0;display:flex;flex-direction:column;gap:var(--sp-3)}
+.chatcol .chat{flex:1;height:auto!important;min-height:0}
+.chatcol .send{margin-top:0}
+.chatside{display:flex;flex-direction:column;gap:var(--sp-4);min-height:0;overflow-y:auto}
+.pgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.pthumb{all:unset;box-sizing:border-box;aspect-ratio:1;border-radius:var(--r-sm);overflow:hidden;background:var(--panel2);border:1px solid var(--line);cursor:zoom-in}
+.pthumb img{width:100%;height:100%;object-fit:cover;display:block}.pthumb:focus-visible{outline:2px solid var(--acct);outline-offset:1px}
+@media(max-width:1180px){.chatwrap{grid-template-columns:minmax(0,1fr)}.chatside{display:none}}
+.shell.dm-open .chatwrap{grid-template-columns:minmax(0,1fr)}.shell.dm-open .chatside{display:none}
+/* ---- Planning ---- */
+.ev{align-items:center;padding:14px 16px!important}
+.ev .when{border-radius:var(--r-md)!important}
+/* ---- Notes ---- */
+.notes{min-height:calc(100vh - 210px)!important}
+/* ---- Équipe ---- */
+.mcard{background:var(--panel)!important;border-color:var(--line)!important;border-radius:var(--r-lg)!important}
+/* ---- Paramètres / Contrôle à distance / Notifications ---- */
+.grid2>.panel,.grid3>.panel{border-radius:var(--r-lg)}
+.nrow{border-radius:var(--r-md)}
+/* ---- Messages privés ---- */
+#dm .dmhead{height:56px;box-sizing:border-box;border-bottom:1px solid var(--line)}
+#dm .dmlist button{border-radius:var(--r-md)}
+.dmsend{display:grid!important;grid-template-columns:auto auto 1fr auto;gap:6px;align-items:center}
+.dmsend textarea{grid-column:1/-1;grid-row:1;min-height:44px;resize:none}
+.dmsend .imgbtn{width:34px;height:34px}
+.dmsend button.pri{grid-column:4;justify-self:end;height:34px}
+/* ---- Connexion / installation ---- */
+.gate .box{background:var(--panel)!important;border:1px solid var(--line)!important;border-radius:var(--r-lg)!important}
+/* ---- Fenêtres ---- */
+#modal{background:rgba(5,5,7,.7)}
+#mtitle{font-size:16px;font-weight:600}
 /* 0.4.7 : les menus flottants doivent recevoir les clics même au-dessus de la zone de déplacement de la fenêtre */
 .pop,.pop *,#lbox,#lbox *,.mebtn{-webkit-app-region:no-drag !important}
 /* ---- 0.5.0 : profils ---- */

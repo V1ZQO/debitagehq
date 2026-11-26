@@ -234,12 +234,14 @@ function fileCard(f, n = 1) {
 <div class="row end">${n > 1 ? `<button class="sm ghost" data-act="fhist" data-id="${id}">Historique</button>` : ''}<button class="sm" data-act="openfile" data-id="${id}">${f.kind === 'upload' ? 'Télécharger' : 'Ouvrir'}</button>${f.kind !== 'upload' ? `<button class="sm ghost" data-act="copy" data-id="${id}">Copier</button>` : ''}<button class="sm ghost" data-act="delfile" data-id="${id}" aria-label="Supprimer">Supprimer</button></div></div>`
 }
 function vFiles() {
-  const q = fileQ.toLowerCase(); const list = curFiles().filter(({ f }) => (fileFolder === 'Tous' || f.folder === fileFolder) && (!q || String(f.name || '').toLowerCase().includes(q)));
-  return `<div class="bar"><div><h2>Fichiers</h2><p class="sub">${esc(C().filesSub)}</p></div><div class="row"><select id="upFolder" aria-label="Dossier où envoyer" style="width:auto">${opts(C().folders, C().folders[0])}</select><label class="btn pri" for="upin" tabindex="0">Envoyer des fichiers</label><input type="file" id="upin" multiple hidden><label class="btn" for="goin" tabindex="0">Gros fichier (Gofile)</label><input type="file" id="goin" multiple hidden><button data-act="newlink">Ajouter un lien</button></div></div>
-<p class="hint">Glisse tes fichiers ici ou utilise le bouton. Si tu renvoies un fichier qui porte le même nom, l'ancien est gardé dans son historique. Jusqu'à 50 Mo, les fichiers restent privés dans l'équipe. Au-delà, ils partent automatiquement sur Gofile (taille illimitée) : le lien n'est visible que dans l'appli, mais toute personne qui l'a peut télécharger, et Gofile supprime les fichiers restés plusieurs semaines sans téléchargement.</p>
+  const q = fileQ.toLowerCase(); const cf = curFiles(); const list = cf.filter(({ f }) => (fileFolder === 'Tous' || f.folder === fileFolder) && (!q || String(f.name || '').toLowerCase().includes(q)));
+  const nIn = fo => fo === 'Tous' ? cf.length : cf.filter(({ f }) => f.folder === fo).length;
+  return `<div class="bar"><div><h2>Fichiers</h2><p class="sub">${esc(C().filesSub)}</p></div><div class="row"><button class="ghost" data-act="newlink">Ajouter un lien</button><label class="btn" for="goin" tabindex="0">Gros fichier (Gofile)</label><input type="file" id="goin" multiple hidden><label class="btn pri" for="upin" tabindex="0">Envoyer des fichiers</label><input type="file" id="upin" multiple hidden></div></div>
 ${uploading.length ? `<p class="up">Envoi en cours : ${uploading.map(u => esc(u.name) + (u.via ? ' vers ' + u.via : '') + (u.pct != null ? ` (${u.pct} %)` : '')).join(', ')}</p>` : ''}
-<div class="row"><div class="srch"><input id="fq" type="search" placeholder="Rechercher un fichier" value="${esc(fileQ)}" aria-label="Rechercher un fichier">${fileQ ? '<button class="clr" data-act="clrq" data-id="fq" aria-label="Effacer la recherche">×</button>' : ''}</div><div class="chips">${['Tous', ...C().folders].map(f => `<button class="chip${f === fileFolder ? ' on' : ''}" data-act="folder" data-id="${esc(f)}">${esc(f)}</button>`).join('')}</div></div>
-${list.length ? `<div class="tbl">${list.map(x => fileCard(x.f, x.n)).join('')}</div>` : `<p class="empty">${SP('files').length ? 'Aucun fichier ne correspond.' : 'Aucun fichier pour l’instant. Envoie le premier !'}</p>`}`
+<div class="fl2"><aside class="folders" aria-label="Dossiers">${['Tous', ...C().folders].map(f => `<button class="fold${f === fileFolder ? ' on' : ''}" data-act="folder" data-id="${esc(f)}" aria-pressed="${f === fileFolder}">${f === 'Tous' ? 'Tous les fichiers' : esc(f)}<span>${nIn(f)}</span></button>`).join('')}
+<div class="fhelp"><b>Envoyer</b> : glisse tes fichiers n'importe où sur cette page.<br>Jusqu'à 50 Mo, ils restent privés dans l'équipe. Au-delà, ils passent par Gofile : toute personne qui a le lien peut télécharger, et Gofile supprime les fichiers inutilisés après quelques semaines.</div></aside>
+<div class="fmain"><div class="ftool"><div class="srch"><input id="fq" type="search" placeholder="Rechercher un fichier" value="${esc(fileQ)}" aria-label="Rechercher un fichier">${fileQ ? '<button class="clr" data-act="clrq" data-id="fq" aria-label="Effacer la recherche">×</button>' : ''}</div><label class="fdest">Envoyer dans<select id="upFolder" aria-label="Dossier où envoyer">${opts(C().folders, fileFolder !== 'Tous' && C().folders.includes(fileFolder) ? fileFolder : C().folders[0])}</select></label></div>
+${list.length ? `<div class="tbl">${list.map(x => fileCard(x.f, x.n)).join('')}</div>` : `<div class="emptyb"><b>${SP('files').length ? 'Aucun fichier ne correspond.' : 'Aucun fichier pour l’instant.'}</b><span>${SP('files').length ? 'Essaie un autre dossier ou une autre recherche.' : 'Glisse un fichier ici ou clique sur « Envoyer des fichiers ».'}</span></div>`}</div></div>`
 }
 function card(t, i) {
   const id = esc(t.id);
@@ -283,9 +285,12 @@ function vNotes() {
 }
 function vChat() {
   const ms = [...SP('messages')].reverse();
-  return `<div class="bar"><div><h2>Discussion</h2><p class="sub">Les 150 derniers messages de l'équipe.</p></div></div>
-<div class="chat" id="chatlog">${ms.map(m => `<div class="msg${m.author === me ? ' me' : ''}"><div class="who"><button class="whob" data-prof="${esc(m.author)}">${avatar(m.author)}${esc(nm(m.author))}</button> <span>${esc(ago(m.at))}</span>${rxAdd('msg', m.id)}${m.author === me ? `<button class="x" data-act="delmsg" data-id="${esc(m.id)}" aria-label="Supprimer le message">×</button>` : ''}</div>${msgImg(m.img)}${m.body ? `<div class="txt">${rich(m.body)}</div>` : ''}${rxBar('msg', m.id)}</div>`).join('') || '<p class="empty">Lance la conversation.</p>'}</div>
-${imgQueue('chat')}<form class="send" id="chatf">${imgPick('cimgin')}${codePick('ctext')}<textarea id="ctext" rows="2" maxlength="4000" placeholder="Écris un message… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne, glisse ou colle une image)" aria-label="Message"></textarea><button class="pri">Envoyer</button></form>`
+  const onl = members.filter(m => online.has(m.user_id)).length;
+  const pics = SP('messages').filter(m => okImgPath(m.img)).slice(0, 6);
+  const side = `<aside class="chatside"><section class="tile"><h3>Images partagées</h3>${pics.length ? `<div class="pgrid">${pics.map(m => imgs[m.img] ? `<button class="pthumb" data-img="${esc(m.img)}" aria-label="Agrandir l'image de ${esc(nm(m.author))}"><img src="${esc(imgs[m.img].u)}" alt=""></button>` : '<span class="pthumb ph"></span>').join('')}</div>` : '<p class="empty">Aucune image pour l’instant.</p>'}</section><section class="tile"><h3>Derniers fichiers<a href="${hrefOf('fichiers')}">Fichiers →</a></h3>${curFiles().slice(0, 4).map(({ f }) => `<button class="hrowb" data-act="openfile" data-id="${esc(f.id)}"><span class="fext">${esc((String(f.name).split('.').pop() || '?').slice(0, 4).toUpperCase())}</span><span class="ht">${esc(f.name)}</span></button>`).join('') || '<p class="empty">Aucun fichier.</p>'}</section></aside>`;
+  return `<div class="bar"><div><h2>Discussion</h2><p class="sub">Le fil de l'équipe ${esc(SPACES[space].label)} · ${onl} en ligne</p></div></div>
+<div class="chatwrap"><div class="chatcol"><div class="chat" id="chatlog">${ms.map(m => `<div class="msg${m.author === me ? ' me' : ''}"><div class="who"><button class="whob" data-prof="${esc(m.author)}">${avatar(m.author)}${esc(nm(m.author))}</button> <span>${esc(ago(m.at))}</span>${rxAdd('msg', m.id)}${m.author === me ? `<button class="x" data-act="delmsg" data-id="${esc(m.id)}" aria-label="Supprimer le message">×</button>` : ''}</div>${msgImg(m.img)}${m.body ? `<div class="txt">${rich(m.body)}</div>` : ''}${rxBar('msg', m.id)}</div>`).join('') || '<p class="empty">Lance la conversation.</p>'}</div>
+${imgQueue('chat')}<form class="send" id="chatf">${imgPick('cimgin')}${codePick('ctext')}<textarea id="ctext" rows="2" maxlength="4000" placeholder="Écrire à l'équipe… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)" aria-label="Message"></textarea><button class="pri">Envoyer</button></form></div>${side}</div>`
 }
 function vTeam() {
   const list = [...members].sort((x, y) => (y.user_id === me) - (x.user_id === me) || (online.has(y.user_id) - online.has(x.user_id)) || String(x.name).localeCompare(String(y.name)));
@@ -386,7 +391,7 @@ function renderDM() {
   const conv = S.dms.filter(d => (d.sender === dmWith && d.recipient === me) || (d.sender === me && d.recipient === dmWith)).slice().sort((x, y) => ts(x.at) - ts(y.at));
   box.innerHTML = `<div class="dmhead"><button class="x" data-dm="back" aria-label="Retour">‹</button><button class="profb" data-prof="${esc(dmWith)}" aria-label="Voir le profil de ${esc(m.name)}">${avatar(dmWith, true)}</button><span class="dmmid"><b>${esc(m.name)}</b><small>${esc(seenText(m))}</small></span><button class="x" data-dm="close" aria-label="Fermer le panneau">×</button></div>
 <div class="dmlog" id="dmlog">${conv.map(d => `<div class="dmmsg${d.sender === me ? ' me' : ''}"><div class="dmb">${msgImg(d.img)}${d.body ? `<div class="dmtxt">${rich(d.body)}</div>` : ''}${rxAdd('dm', d.id)}</div>${rxBar('dm', d.id)}<small>${esc(ago(d.at))}${d.sender === me && d.read_at ? ' · lu' : ''}</small></div>`).join('') || `<p class="dmempty">Commence la discussion avec ${esc(m.name)}.</p>`}</div>
-${imgQueue('dm')}<form class="dmsend" id="dmf">${imgPick('dmimgin')}${codePick('dmtext')}<textarea id="dmtext" rows="2" maxlength="4000" placeholder="Message à ${esc(m.name)}… (tu peux coller une image)" aria-label="Message privé"></textarea><button class="pri" aria-label="Envoyer">Envoyer</button></form>`;
+${imgQueue('dm')}<form class="dmsend" id="dmf">${imgPick('dmimgin')}${codePick('dmtext')}<textarea id="dmtext" rows="2" maxlength="4000" placeholder="Message à ${esc(m.name)}…" aria-label="Message privé"></textarea><button class="pri" aria-label="Envoyer">Envoyer</button></form>`;
   const ta = $('#dmtext'); ta.value = dmDraft; if (hadFocus) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length) }
   const lg = $('#dmlog'); if (lg && atBot) lg.scrollTop = lg.scrollHeight;
 }
@@ -424,6 +429,7 @@ function route() {
 // ---------- Fenêtres de dialogue ----------
 let mSubmit = null;
 function openModal(title, html, onSubmit, ok, onDel) {
+  $('#modal').classList.remove('drawer');
   $('#mcancel').style.display = ''; $('#mcancel').textContent = 'Annuler'; $('#mcancel').onclick = closeModal; $('#mtitle').textContent = title; $('#mbody').innerHTML = html; $('#mok').textContent = ok || 'Enregistrer';
   $('#mok').className = ok === 'Supprimer' ? 'danger' : 'pri'; $('#mdel').innerHTML = onDel ? '<button type="button" class="danger" id="mdelb">Supprimer</button>' : '';
   if (onDel) $('#mdelb').onclick = () => { closeModal(); onDel() };
@@ -450,6 +456,7 @@ function taskForm(t) {
       if (t) return W('tasks', sb.from('tasks').update(body).eq('id', t.id)).then(ok => { if (ok) notifyAssign({ ...t, ...body }, t.assignee); return ok });
       return (async () => { const { data, error } = await sb.from('tasks').insert({ ...body, space }).select().single(); if (error) { toast(errMsg(error)); return false } reload('tasks'); notifyAssign(data, null); return true })() }, 'Enregistrer',
     t ? () => confirmDel('cette tâche', () => W('tasks', sb.from('tasks').delete().eq('id', t.id))) : null);
+  $('#modal').classList.add('drawer');
 }
 function evForm(e) {
   openModal(e ? 'Modifier l’événement' : 'Nouvel événement', `
