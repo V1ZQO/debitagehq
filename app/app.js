@@ -202,17 +202,29 @@ ${authMsg ? `<div class="notice">${esc(authMsg)}</div>` : ''}
 
 // ---------- Vues ----------
 function vHome() {
-  const td = today(); const up = SP('events').filter(e => String(e.ev_date || '') >= td); const mine = SP('tasks').filter(t => t.assignee === me && t.status !== 'done'); const cnt = k => SP('tasks').filter(t => t.status === k).length;
+  const td = today(); const up = SP('events').filter(e => String(e.ev_date || '') >= td).sort((x, y) => String(x.ev_date + (x.ev_time || '')).localeCompare(String(y.ev_date + (y.ev_time || ''))));
+  const all = SP('tasks'), mine = all.filter(t => t.assignee === me && t.status !== 'done'), cnt = k => all.filter(t => (t.status || 'todo') === k).length;
   const first = names[me] ? names[me].split(' ')[0] : ''; const none = t => `<p class="empty">${t}</p>`;
-  const figs = [[curFiles().length, 'fichiers partagés', 'fichiers'], [cnt('todo'), 'tâches à faire', 'taches'], [cnt('doing'), 'tâches en cours', 'taches'], [up.length, 'rendez-vous à venir', 'planning'], [SP('notes').length, 'notes & docs', 'notes']];
-  return `<h2>${first ? 'Salut ' + esc(first) : 'Accueil'}</h2><p class="sub">${esc(SPACES[space].label)} : ce qui se passe dans l'équipe.</p>
-<div class="figs">${figs.map(([n, l, h]) => `<a href="${hrefOf(h)}"><b>${n}</b>${l}</a>`).join('')}</div>
-<div class="grid2">
-<section class="panel"><h3>Prochains rendez-vous <a href="${hrefOf('planning')}">Planning →</a></h3>${up.slice(0, 4).map(e => { const d = fmtDate(e.ev_date); return `<div class="li"><b class="d">${esc(d.d)} ${esc(d.m)}</b><span>${esc(e.title)}${e.ev_time ? ' · ' + esc(e.ev_time) : ''}</span></div>` }).join('') || none('Rien de prévu pour l’instant.')}</section>
-<section class="panel"><h3>Mes tâches <a href="${hrefOf('taches')}">Tâches →</a></h3>${mine.slice(0, 5).map(t => `<div class="li"><b class="d">${t.status === 'doing' ? 'En cours' : 'À faire'}</b><span>${esc(t.title)}</span></div>`).join('') || none('Aucune tâche assignée à toi.')}</section>
-<section class="panel"><h3>Derniers fichiers <a href="${hrefOf('fichiers')}">Fichiers →</a></h3>${curFiles().slice(0, 5).map(({ f, n }) => `<div class="li"><b class="d">${esc(String(f.folder || 'Autre').slice(0, 8))}</b><span>${esc(f.name)}${n > 1 ? ` <span class="ver">v${n}</span>` : ''} <span class="sub">· ${esc(nm(f.author))}, ${esc(ago(f.at))}</span></span></div>`).join('') || none('Aucun fichier partagé.')}</section>
-<section class="panel"><h3>Discussion <a href="${hrefOf('discussion')}">Ouvrir →</a></h3>${SP('messages').slice(0, 4).map(m => `<div class="li"><b class="d">${esc(nm(m.author).split(' ')[0])}</b><span>${esc((String(m.body || '').replace(/```[\s\S]*?(```|$)/g, ' [code] ').trim() || (m.img ? 'Image' : '')).slice(0, 120))}</span></div>`).join('') || none('Pas encore de message.')}</section>
-</div>`
+  const tot = all.length, dn = cnt('done'), pct = tot ? Math.round(dn / tot * 100) : 0;
+  const d = new Date(), dstr = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const tagS = t => `<span class="tag">${esc(t.tag || 'Autre')}</span>`;
+  const myT = mine.slice(0, 5).map(t => `<button class="hrowb" data-act="edittask" data-id="${esc(t.id)}"><span class="hst ${t.status === 'doing' ? 'doing' : 'todo'}" aria-hidden="true"></span><span class="ht">${esc(t.title)}</span>${tagS(t)}<span class="hm">${t.status === 'doing' ? 'En cours' : 'À faire'}</span></button>`).join('') || none('Aucune tâche assignée à toi. Tranquille.');
+  const segs = Array.from({ length: 10 }, (_, i) => `<span class="${i < Math.round(pct / 10) ? 'on' : ''}"></span>`).join('');
+  const prog = `<div class="kbig"><b>${pct}%</b><span>${dn} / ${tot} tâches terminées</span></div><div class="ksegs" role="img" aria-label="Avancement ${pct} %">${segs}</div><div class="k3"><div><b>${cnt('todo')}</b>à faire</div><div><b>${cnt('doing')}</b>en cours</div><div><b>${dn}</b>terminées</div></div>`;
+  const onl = members.filter(m => online.has(m.user_id));
+  const team = `<div class="avstack">${onl.slice(0, 6).map(m => `<button class="profb" data-prof="${esc(m.user_id)}" aria-label="Profil de ${esc(m.name)}">${avatar(m.user_id)}</button>`).join('') || '<span class="sub">Personne en ligne</span>'}</div><div class="sub">${onl.slice(0, 4).map(m => `${esc(m.name.split(' ')[0])} · ${esc(STATUS[statusOf(m.user_id)].l.toLowerCase())}`).join('<br>')}</div>`;
+  const nx = up[0], nd = nx ? fmtDate(nx.ev_date) : null;
+  const rdv = nx ? `<a class="rdv" href="${hrefOf('planning')}"><span class="rdvd"><small>${esc(nd.w.slice(0, 3)).toUpperCase()}.</small><b>${esc(nd.d)}</b></span><span><b>${esc(nx.title)}</b><small>${esc(nd.m)}${nx.ev_time ? ' · ' + esc(nx.ev_time) : ''}${nx.place ? ' · ' + esc(nx.place) : ''}</small></span></a>` : none('Rien de prévu.');
+  const ev = [];
+  SP('files').slice(0, 8).forEach(f => ev.push([f.at, 'f', f.author, `a envoyé <b>${esc(f.name)}</b>`]));
+  all.filter(t => t.status === 'done').slice(0, 6).forEach(t => ev.push([t.upd || t.at, 'd', t.assignee || t.author, `a terminé « ${esc(t.title)} »`]));
+  all.slice(0, 6).forEach(t => ev.push([t.at, 't', t.author, `a créé la tâche « ${esc(t.title)} »`]));
+  SP('notes').slice(0, 4).forEach(n => ev.push([n.upd || n.at, 'n', n.upd_by || n.author, `a modifié la note « ${esc(n.title || 'Sans titre')} »`]));
+  const acts = ev.filter(x => x[0] && x[2]).sort((x, y) => ts(y[0]) - ts(x[0])).slice(0, 5).map(([at, k, who, w]) => `<div class="hact"><i class="k-${k}"></i><span><b>${esc(nm(who))}</b> ${w}</span><small>${esc(ago(at))}</small></div>`).join('') || none('Pas encore d’activité.');
+  const fl = curFiles().slice(0, 4).map(({ f, n }) => `<button class="hrowb" data-act="openfile" data-id="${esc(f.id)}"><span class="fext">${esc((String(f.name).split('.').pop() || '?').slice(0, 4).toUpperCase())}</span><span class="ht">${esc(f.name)}${n > 1 ? ` <span class="ver">v${n}</span>` : ''}</span><span class="hm">${esc(nm(f.author))}</span></button>`).join('') || none('Aucun fichier partagé.');
+  const T = (cls, title, link, body) => `<section class="tile ${cls}"><h3>${title}${link ? `<a href="${hrefOf(link[0])}">${link[1]} →</a>` : ''}</h3>${body}</section>`;
+  return `<div class="bar"><div><h2>${first ? 'Bonjour ' + esc(first) : 'Accueil'}</h2><p class="sub">${esc(dstr.charAt(0).toUpperCase() + dstr.slice(1))} · ${esc(SPACES[space].label)} · ${mine.length ? mine.length + ' tâche' + (mine.length > 1 ? 's' : '') + ' pour toi' : 'aucune tâche pour toi'}</p></div><button class="pri" data-act="newtask">Nouvelle tâche</button></div>
+<div class="bento">${T('t-mine', 'Mes tâches', ['taches', 'Toutes'], myT)}${T('t-prog', 'Avancement', null, prog)}${T('t-team', 'En ligne', ['equipe', 'Équipe'], team)}${T('t-act', 'Activité récente', null, acts)}${T('t-rdv', 'Prochain rendez-vous', ['planning', 'Planning'], rdv)}${T('t-files', 'Derniers fichiers', ['fichiers', 'Fichiers'], fl)}</div>`
 }
 function fileCard(f, n = 1) {
   const th = f.path && thumbs[f.path]; const img = th && /^image\//.test(String(f.type || '')); const ext = (String(f.name || '').split('.').pop() || '').slice(0, 4).toUpperCase(); const id = esc(f.id);
@@ -307,7 +319,7 @@ function render(fresh) {
   for (const k in keep) { const el = document.getElementById(k); if (el) { try { el.value = keep[k]; el.dataset.dirty = 1 } catch {} } }
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus({ preventScroll: true }); try { if (s0 != null) el.setSelectionRange(s0, s1) } catch {} } }
   const c = $('#chatlog'); if (c && atBot) c.scrollTop = c.scrollHeight;
-  updateNotifBadge();
+  updateNotifBadge(); buildSide();
   const slot = $('#rcslot'); if (slot) { slot.appendChild(rcVideo); if (rcVideo.srcObject) rcVideo.play().catch(() => {}) }
   renderDM();
 }
@@ -329,15 +341,13 @@ const ICONS = {
 const svg = p => `<svg viewBox="0 0 24 24">${p}</svg>`;
 const LABELS = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion' };
 function toggleGrp(id, save = true) { const g = document.querySelector(`.grp[data-g="${id}"]`); if (!g) return; const closed = g.classList.toggle('closed'); g.querySelector('.gh').setAttribute('aria-expanded', String(!closed)); if (save) try { localStorage.setItem('qg.grp.' + id, closed ? '0' : '1') } catch {} }
+const TABS = { accueil: 'Accueil', taches: 'Tâches', fichiers: 'Fichiers', planning: 'Planning', notes: 'Notes', discussion: 'Discussion' };
 function buildSide() {
-  const nav = $('#sidenav');
-  nav.innerHTML = Object.entries(SPACES).map(([id, s]) => { let closed = false; try { closed = localStorage.getItem('qg.grp.' + id) === '0' } catch {}
-    return `<div class="grp g-${id}${closed ? ' closed' : ''}" data-g="${id}"><button class="gh" data-grp="${id}" aria-expanded="${!closed}">${svg(ICONS[id])}<span><b>${s.label}</b><small>${s.sub}</small></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
-<nav class="gl" aria-label="${s.label}">${Object.entries(LABELS).map(([v, l]) => `<a href="#${id}-${v}">${svg(ICONS[v])}<span>${l}</span></a>`).join('')}</nav></div>` }).join('')
-    + `<div class="slabel">Général</div><nav aria-label="Général"><a href="#remote">${svg(ICONS.remote)}<span>Contrôle à distance</span></a><a href="#notifications">${svg(ICONS.notifications)}<span>Notifications</span><b class="badge nbadge" id="nbadge" hidden></b></a><a href="#equipe">${svg(ICONS.equipe)}<span>Équipe</span></a><a href="#parametres">${svg(ICONS.parametres)}<span>Paramètres</span></a></nav>`;
-  nav.addEventListener('click', e => { const b = e.target.closest('[data-grp]'); if (b) { e.preventDefault(); toggleGrp(b.dataset.grp) } });
+  const g = GLOBAL.includes(view), cur = g ? 'accueil' : view;
+  $('#spaceseg').innerHTML = Object.entries(SPACES).map(([id, s]) => `<a role="tab" class="ss-${id}" href="#${id}-${cur}" aria-selected="${!g && space === id}">${esc(s.label)}</a>`).join('');
+  $('#tabs').innerHTML = Object.entries(TABS).map(([v, l]) => `<a href="#${space}-${v}"${!g && view === v ? ' aria-current="page"' : ''}>${l}</a>`).join('');
+  const b = $('#nbell'); if (b) { b.hidden = phase !== 'app'; b.classList.toggle('on', view === 'notifications') }
 }
-buildSide();
 
 // ---------- Messages privés (panneau de droite) ----------
 const unreadFrom = id => S.dms.filter(d => d.recipient === me && d.sender === id && !d.read_at).length;
@@ -356,7 +366,7 @@ function renderDM() {
   if (!box) return;
   const show = phase === 'app' && dmOpen;
   shell.classList.toggle('dm-open', show);
-  if (tg) { const n = phase === 'app' ? unreadAll() : 0; tg.hidden = phase !== 'app'; tg.innerHTML = `<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Messages${n ? `<b class="badge">${n}</b>` : ''}`; tg.classList.toggle('on', show) }
+  if (tg) { const n = phase === 'app' ? unreadAll() : 0; tg.hidden = phase !== 'app'; tg.innerHTML = `<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>${n ? `<b class="badge">${n}</b>` : ''}`; tg.setAttribute('aria-label', n ? `Messages privés, ${n} non lu${n > 1 ? 's' : ''}` : 'Messages privés'); tg.classList.toggle('on', show) }
   if (!show) { box.innerHTML = ''; return }
   const hadFocus = document.activeElement && document.activeElement.id === 'dmtext';
   const list = $('#dmlog'); const atBot = !list || list.scrollHeight - list.scrollTop - list.clientHeight < 60;
@@ -405,7 +415,7 @@ function route() {
   if (m && VIEWS.includes(m[2]) && !GLOBAL.includes(m[2])) { space = m[1]; view = m[2] } else if (GLOBAL.includes(h)) view = h; else view = 'accueil';
   if (fileFolder !== 'Tous' && !C().folders.includes(fileFolder)) fileFolder = 'Tous';
   $('#shell').classList.toggle('sp-cheat', space === 'cheat' && !GLOBAL.includes(view));
-  document.querySelectorAll('.side nav a').forEach(a => a.setAttribute('aria-current', a.getAttribute('href') === '#' + (GLOBAL.includes(view) ? view : space + '-' + view) ? 'page' : 'false'));
+  buildSide();
   const g = document.querySelector(`.grp[data-g="${space}"]`); if (g && !GLOBAL.includes(view) && g.classList.contains('closed')) toggleGrp(space, false);
   if (view === 'fichiers') refreshThumbs();
   render(true);
@@ -1018,7 +1028,7 @@ const bodyOf = d => String((d && d.body) || (d && d.img ? '📷 Image' : ''));
 function renderMe() {
   const box = $('#mebox'); if (!box || phase !== 'app') return;
   const n = names[me] || '', s = statusOf(me);
-  box.innerHTML = `<button class="mebtn" id="mestat" aria-haspopup="menu" aria-label="Changer mon statut"><span class="av on st-${s}">${avInner(me)}</span><span><b>${esc(n || 'Moi')}</b><small>${esc(STATUS[s].l)}</small></span><svg class="chev" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>`;
+  box.innerHTML = `<button class="mebtn" id="mestat" aria-haspopup="menu" aria-label="Mon compte : ${esc(n || 'Moi')}, ${esc(STATUS[s].l)}" title="${esc(n || 'Moi')} · ${esc(STATUS[s].l)}"><span class="av on st-${s}">${avInner(me)}</span></button>`;
 }
 function setStatus(s) {
   if (!STATUS[s]) return; myStatus = s; try { localStorage.setItem('qg.status', s) } catch {}
@@ -1031,12 +1041,13 @@ function closePop() { if (pop) { pop.remove(); pop = null } }
 function openPop(anchor, html, cls) {
   closePop(); pop = document.createElement('div'); pop.className = 'pop ' + (cls || ''); pop.setAttribute('role', 'menu'); pop.innerHTML = html; document.body.appendChild(pop);
   const r = anchor.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
-  let x = Math.min(Math.max(8, r.left), innerWidth - pw - 8), y = r.top - ph - 6; if (y < 8) y = r.bottom + 6;
+  let x = Math.min(Math.max(8, r.left), innerWidth - pw - 8), y = r.top - ph - 6; if (y < 8) y = r.bottom + 6; if (cls === 'stpop') { x = Math.max(8, r.right - pw); y = r.bottom + 8 }
   pop.style.left = x + 'px'; pop.style.top = y + 'px';
   const f = pop.querySelector('button'); if (f) f.focus();
 }
 function statusMenu(anchor) {
-  openPop(anchor, Object.entries(STATUS).map(([k, v]) => `<button role="menuitemradio" aria-checked="${k === myStatus}" data-st="${k}"><i class="sd st-${k}"></i>${esc(v.l)}${k === 'dnd' ? '<small>Coupe les sons et notifications</small>' : ''}</button>`).join(''), 'stpop');
+  const n = names[me] || 'Moi';
+  openPop(anchor, `<div class="pmhead"><span class="av big">${avInner(me)}</span><span><b>${esc(n)}</b><small>${esc(STATUS[statusOf(me)].l)}</small></span></div><div class="pmlbl">Statut</div>` + Object.entries(STATUS).map(([k, v]) => `<button role="menuitemradio" aria-checked="${k === myStatus}" data-st="${k}"><i class="sd st-${k}"></i>${esc(v.l)}${k === 'dnd' ? '<small>Coupe les sons et notifications</small>' : ''}</button>`).join('') + `<div class="pmsep"></div>${[['equipe', 'Équipe'], ['remote', 'Contrôle à distance'], ['notifications', 'Notifications'], ['parametres', 'Paramètres et profil']].map(([h, l]) => `<a role="menuitem" href="#${h}" data-close>${l}</a>`).join('')}`, 'stpop');
 }
 
 // ---------- Réactions emoji ----------
@@ -1123,6 +1134,7 @@ document.addEventListener('click', e => {
   const t = e.target;
   if (pop && !pop.contains(t) && !t.closest('#mestat,[data-rxadd]')) closePop();
   const ms = t.closest('#mestat'); if (ms) { e.preventDefault(); return pop && pop.classList.contains('stpop') ? closePop() : statusMenu(ms) }
+  if (t.closest('[data-close]')) closePop();
   const st = t.closest('[data-st]'); if (st) { e.preventDefault(); return setStatus(st.dataset.st) }
   const ad = t.closest('[data-rxadd]'); if (ad) { e.preventDefault(); return pop && pop.classList.contains('rxpop') && pop.dataset.id === ad.dataset.id ? closePop() : (rxMenu(ad, ad.dataset.rxadd, ad.dataset.id), pop.dataset.id = ad.dataset.id) }
   const re = t.closest('[data-rxe]'); if (re) { e.preventDefault(); return toggleReact(re.dataset.k, re.dataset.id, re.dataset.rxe) }
@@ -1153,7 +1165,7 @@ $('#dm').addEventListener('click', e => { const b = e.target.closest('[data-dm="
 
 // Boutons de fenêtre façon macOS
 document.querySelectorAll('[data-win]').forEach(b => b.addEventListener('click', () => QG.win(b.dataset.win)));
-$('#titlebar').addEventListener('dblclick', e => { if (!e.target.closest('.wctl')) QG.win('max') });
+$('#titlebar').addEventListener('dblclick', e => { if (!e.target.closest('.wctl,a,button,#updbox')) QG.win('max') });
 
 boot().catch(e => { phase = cfg ? 'auth' : 'setup'; authMsg = errMsg(e); QG.bootDone(); render(true) });
 }
