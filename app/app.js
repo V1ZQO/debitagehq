@@ -228,7 +228,7 @@ function vHome() {
 }
 function fileCard(f, n = 1) {
   const th = f.path && thumbs[f.path]; const img = th && /^image\//.test(String(f.type || '')); const ext = (String(f.name || '').split('.').pop() || '').slice(0, 4).toUpperCase(); const id = esc(f.id);
-  return `<div class="frow"><div class="ico">${img ? `<img src="${esc(th.url)}" alt="">` : (f.kind === 'link' ? 'LIEN' : f.kind === 'gofile' ? 'GOFILE' : esc(ext || '—'))}</div>
+  return `<div class="frow" draggable="true" data-fid="${id}" title="Glisse vers un dossier à gauche pour déplacer"><div class="ico">${img ? `<img src="${esc(th.url)}" alt="">` : (f.kind === 'link' ? 'LIEN' : f.kind === 'gofile' ? 'GOFILE' : esc(ext || '—'))}</div>
 <div><b title="${esc(f.name)}">${esc(f.name)}</b>${n > 1 ? `<span class="ver" title="${n} versions">v${n}</span>` : ''}<div class="c">${esc(nm(f.author))} · ${esc(ago(f.at))}</div></div>
 <span class="c h1">${esc(f.folder || 'Autre')}</span><span class="c r">${f.size ? esc(size(f.size)) : ''}</span>
 <div class="row end">${n > 1 ? `<button class="sm ghost" data-act="fhist" data-id="${id}">Historique</button>` : ''}<button class="sm" data-act="openfile" data-id="${id}">${f.kind === 'upload' ? 'Télécharger' : 'Ouvrir'}</button>${f.kind !== 'upload' ? `<button class="sm ghost" data-act="copy" data-id="${id}">Copier</button>` : ''}<button class="sm ghost" data-act="delfile" data-id="${id}" aria-label="Supprimer">Supprimer</button></div></div>`
@@ -604,9 +604,9 @@ main.addEventListener('keydown', e => {
   if ((t.id === 'nbody' || t.id === 'ntitle') && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); const b = main.querySelector('[data-act=savenote]'); if (b) saveNote(b.dataset.id) }
   if (t.tagName === 'LABEL' && (t.htmlFor === 'upin' || t.htmlFor === 'goin') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); $('#' + t.htmlFor).click() }
 });
-main.addEventListener('dragover', e => { if (phase !== 'app' || (view !== 'fichiers' && view !== 'discussion')) return; e.preventDefault(); main.classList.add('drop') });
+main.addEventListener('dragover', e => { if (dragFile || dragTask) return; if (phase !== 'app' || (view !== 'fichiers' && view !== 'discussion')) return; e.preventDefault(); main.classList.add('drop') });
 main.addEventListener('dragleave', e => { if (e.target === main) main.classList.remove('drop') });
-main.addEventListener('drop', e => { if (phase !== 'app' || (view !== 'fichiers' && view !== 'discussion')) return; e.preventDefault(); main.classList.remove('drop'); const l = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (!l.length) return; if (view === 'discussion') addImgs('chat', l); else uploadFiles(l) });
+main.addEventListener('drop', e => { if (dragFile || dragTask) return; if (phase !== 'app' || (view !== 'fichiers' && view !== 'discussion')) return; e.preventDefault(); main.classList.remove('drop'); const l = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (!l.length) return; if (view === 'discussion') addImgs('chat', l); else uploadFiles(l) });
 main.addEventListener('paste', e => { if (e.target.id !== 'ctext') return; const l = [...(e.clipboardData && e.clipboardData.files || [])].filter(isImg); if (l.length) { e.preventDefault(); addImgs('chat', l) } });
 document.addEventListener('dragover', e => e.preventDefault()); document.addEventListener('drop', e => e.preventDefault());
 window.addEventListener('hashchange', () => { if (phase === 'app') route() });
@@ -861,6 +861,31 @@ async function tnDel(id) {
 }
 $('#mbody').addEventListener('click', e => { const b = e.target.closest('[data-tn]'); if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.dataset.tn === 'add') tnAdd(b.dataset.id); else tnDel(b.dataset.id) });
 $('#mbody').addEventListener('keydown', e => { if (e.target.id === 'tntext' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); const b = $('#mbody [data-tn=add]'); if (b) tnAdd(b.dataset.id) } });
+
+// ---------- Glisser-déposer des fichiers entre dossiers ----------
+let dragFile = null;
+main.addEventListener('dragstart', e => {
+  const r = e.target.closest && e.target.closest('.frow[data-fid]'); if (!r || view !== 'fichiers') return;
+  dragFile = r.dataset.fid; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'qg-file:' + dragFile) } catch {}
+  setTimeout(() => r.classList.add('dragging'));
+});
+main.addEventListener('dragend', () => { dragFile = null; document.querySelectorAll('.frow.dragging,.fold.over').forEach(x => x.classList.remove('dragging', 'over')) });
+main.addEventListener('dragover', e => {
+  if (!dragFile) return; const fo = e.target.closest && e.target.closest('.fold[data-id]'); if (!fo || fo.dataset.id === 'Tous') return;
+  e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.fold.over').forEach(x => { if (x !== fo) x.classList.remove('over') }); fo.classList.add('over');
+}, true);
+main.addEventListener('drop', async e => {
+  if (!dragFile) return; const fo = e.target.closest && e.target.closest('.fold[data-id]'); if (!fo || fo.dataset.id === 'Tous') return;
+  e.preventDefault(); e.stopPropagation(); const id = dragFile, to = fo.dataset.id; dragFile = null; fo.classList.remove('over');
+  const f = S.files.find(x => x.id === id); if (!f) return render();
+  // déplace aussi les autres versions du même nom dans le même espace
+  const group = (fileGroups(spOf(f)).get(fkey(f)) || [f]).filter(x => x.folder !== to); if (!group.length) return render();
+  const prev = group.map(x => [x.id, x.folder]); group.forEach(x => x.folder = to); render();
+  const { error } = await sb.from('files').update({ folder: to }).in('id', group.map(x => x.id));
+  if (error) { prev.forEach(([id, fo]) => { const x = S.files.find(y => y.id === id); if (x) x.folder = fo }); render(); toast(errMsg(error)) }
+  else toast(group.length > 1 ? `${group.length} versions de « ${f.name} » déplacées dans ${to}` : `« ${f.name} » déplacé dans ${to}`);
+}, true);
 
 // ---------- Glisser-déposer des tâches ----------
 let dragTask = null;
