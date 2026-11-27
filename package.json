@@ -1,7 +1,7 @@
 {
   "name": "debitagehq",
   "productName": "DebitageHQ",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "Espace privé de l'équipe DebitageHQ",
   "main": "main.js",
   "author": "Equipe QG",
