@@ -1,0 +1,87 @@
+{
+  "name": "debitagehq",
+  "productName": "DebitageHQ",
+  "version": "0.8.4",
+  "description": "Espace privé de l'équipe DebitageHQ",
+  "main": "main.js",
+  "author": "Equipe QG",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "release": "electron-builder --win nsis --x64 --publish always"
+  },
+  "build": {
+    "appId": "fr.equipe.leqg",
+    "productName": "DebitageHQ",
+    "files": [
+      "main.js",
+      "preload.js",
+      "splash-preload.js",
+      "banner-preload.js",
+      "app/**/*",
+      "!app/fonts/**",
+      "!node_modules/koffi/build/koffi/!(win32_x64)/**",
+      "!node_modules/koffi/src/**",
+      "!node_modules/koffi/vendor/**",
+      "!node_modules/koffi/doc/**"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "DebitageHQ-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DebitageHQ",
+      "uninstallDisplayName": "DebitageHQ",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "include": "build/installer.nsh",
+      "deleteAppDataOnUninstall": false,
+      "language": "1036",
+      "installerLanguages": [
+        "fr_FR"
+      ]
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "V1ZQO",
+        "repo": "debitagehq",
+        "releaseType": "release"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/koffi/**"
+    ]
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.119.2",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "koffi": "^2.16.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/V1ZQO/debitagehq.git"
+  }
+}
