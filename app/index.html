@@ -24,10 +24,9 @@ input,textarea,.txt,.code,.what,.task p,.li span{user-select:text}
 h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em;line-height:1.25}
 h2{font-size:20px}h3{font-size:13px}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#2c2c32;border-radius:10px;border:3px solid transparent;background-clip:content-box}::-webkit-scrollbar-thumb:hover{background-color:#3a3a42}::-webkit-scrollbar-track{background:transparent}
-.shell{display:grid;grid-template-columns:200px minmax(0,1fr) 0;height:100vh;transition:grid-template-columns .28s cubic-bezier(.33,1,.68,1)}.shell.dm-open{grid-template-columns:200px minmax(0,1fr) 290px}
-.shell.dm-open #dm{animation:dmslide .3s cubic-bezier(.33,1,.68,1)}
-@keyframes dmslide{from{opacity:0;transform:translateX(22px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){.shell{transition:none}.shell.dm-open #dm{animation:none}}
+.shell{display:grid;grid-template-columns:200px minmax(0,1fr) 0;height:100vh;overflow:hidden;transition:grid-template-columns .32s cubic-bezier(.22,1,.36,1)!important}.shell.dm-open{grid-template-columns:200px minmax(0,1fr) 290px}
+.shell.dm-open #dm{animation:dmslide .36s cubic-bezier(.22,1,.36,1)!important}
+@keyframes dmslide{from{opacity:0;transform:translateX(80px)}to{opacity:1;transform:none}}
 .shell.gate-mode{grid-template-columns:minmax(0,1fr) 0}.shell.gate-mode #dm{display:none}.shell.gate-mode .side{display:none}
 /* barre latérale */
 .side{background:linear-gradient(180deg,#141015 0%,var(--side) 35%,var(--side) 70%,#0e1120 100%);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px 8px 10px;-webkit-app-region:drag}
