@@ -1280,16 +1280,34 @@ function vAssistant() {
 async function askGemini(history) {
   const contents = history.map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: String(m.content || '') }] }));
   const sys = { parts: [{ text: "Tu es l'assistant créatif d'une petite équipe qui fait des vidéos YouTube sur son serveur GTA RP (FiveM). Réponds en français, de façon concrète et concise, avec des idées exploitables. Propose des listes courtes quand c'est pertinent." }] };
-  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(aiModel) + ':generateContent?key=' + encodeURIComponent(aiKey), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ systemInstruction: sys, contents, generationConfig: { temperature: 0.9, maxOutputTokens: 1024 } })
-  });
-  let j = null; try { j = await r.json() } catch {}
-  if (!r.ok) throw new Error((j && j.error && j.error.message) || ('Gemini a répondu ' + r.status));
-  const c = j && j.candidates && j.candidates[0];
-  const txt = c && c.content && c.content.parts && c.content.parts.map(p => p.text || '').join('');
-  if (!txt) throw new Error(c && c.finishReason === 'SAFETY' ? 'Gemini a bloqué cette réponse.' : 'Réponse vide de Gemini.');
-  return txt.trim();
+  const body = JSON.stringify({ systemInstruction: sys, contents, generationConfig: { temperature: 0.9, maxOutputTokens: 2048 } });
+  // Modèle choisi en premier, puis modèles de secours si surcharge. Évite de réessayer le même deux fois.
+  const chain = [...new Set([aiModel, 'gemini-3.7-flash', 'gemini-3.6-flash'].filter(Boolean))];
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let lastErr = 'Gemini indisponible.';
+  for (const model of chain) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let r, j = null;
+      try {
+        r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(aiKey), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body
+        });
+      } catch { lastErr = 'Pas de connexion à Gemini.'; await sleep(800 * (attempt + 1)); continue; }
+      try { j = await r.json() } catch {}
+      if (r.ok) {
+        const c = j && j.candidates && j.candidates[0];
+        const txt = c && c.content && c.content.parts && c.content.parts.map(p => p.text || '').join('');
+        if (txt) return txt.trim();
+        if (c && c.finishReason === 'SAFETY') throw new Error('Gemini a bloqué cette réponse.');
+        lastErr = 'Réponse vide de Gemini.'; break; // on tente le modèle suivant
+      }
+      lastErr = (j && j.error && j.error.message) || ('Gemini a répondu ' + r.status);
+      if (r.status === 503 || r.status === 429 || r.status === 500) { await sleep(900 * (attempt + 1)); continue; } // surcharge : on réessaie
+      if (r.status === 404) break; // modèle inexistant : on passe au suivant
+      throw new Error(lastErr); // 400/403… : erreur permanente (clé, requête) — inutile de réessayer
+    }
+  }
+  throw new Error('Gemini est surchargé (plusieurs tentatives et modèles essayés). Réessaie dans un moment.');
 }
 async function aiSend(text) {
   text = String(text || '').trim(); if (!text || aiBusy || !aiReady) return;
