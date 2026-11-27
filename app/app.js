@@ -7,13 +7,14 @@ const QG = window.qg || { rcCapture: async () => true, rcSession: async () => tr
 // ---------- État ----------
 const CFG_KEY = 'qg.config';
 let cfg = loadCfg(), sb = null, me = null, phase = 'boot', authTab = 'login', authMsg = '';
-const S = { task_notes: [], files: [], tasks: [], events: [], notes: [], messages: [], dms: [], notifications: [], reactions: [] };
+const S = { task_notes: [], files: [], tasks: [], events: [], notes: [], messages: [], dms: [], notifications: [], reactions: [], ideas: [], ai_chats: [] };
+let ideasReady = true, aiReady = false, aiBusy = false, aiKey = '', aiModel = 'gemini-2.0-flash';
 let tnReady = true, profReady = true, noteMode = 'edit', noteLive = null, reactReady = true, presMeta = {}, myStatus = (() => { try { return localStorage.getItem('qg.status') || 'dispo' } catch { return 'dispo' } })();
 let notifReady = true, soundOn = (() => { try { return localStorage.getItem('qg.sound') !== '0' } catch { return true } })();
 let autoStart = true, online = new Set(), pres = null, dmReady = true, dmOpen = (() => { try { return localStorage.getItem('qg.dm') !== '0' } catch { return true } })(), dmWith = null, dmDraft = '';
 let members = []; const names = {}; const thumbs = {};
-const VIEWS = ['accueil', 'fichiers', 'taches', 'planning', 'notes', 'discussion', 'equipe', 'remote', 'parametres', 'notifications'];
-const SPACES = { serveur: { label: 'Serveur GTA 6', sub: 'Développement' }, cheat: { label: 'Cheat', sub: 'Projet cheat' } };
+const VIEWS = ['accueil', 'fichiers', 'taches', 'planning', 'notes', 'discussion', 'idees', 'assistant', 'equipe', 'remote', 'parametres', 'notifications'];
+const SPACES = { serveur: { label: 'Serveur GTA 6', sub: 'Développement' }, cheat: { label: 'Cheat', sub: 'Projet cheat' }, youtube: { label: 'YouTube', sub: 'Chaîne' } };
 let space = 'serveur', spaceReady = true;
 const spOf = r => (r && r.space) || 'serveur';
 const SP = t => S[t].filter(r => spOf(r) === space);   // données de l'espace affiché
@@ -39,6 +40,15 @@ const CATS = {
     notesSub: 'Idées, recherches, changelogs et documentation technique.',
     notesHint: 'idée de fonctionnalité, recherche, changelog, architecture',
     taskEx: 'Ex. Nouvelle option du menu'
+  },
+  youtube: {
+    folders: ['Rushs', 'Audio', 'Musiques', 'Miniatures', 'Montages', 'Scripts vidéo', 'Docs', 'Autre'],
+    ttags: ['Tournage', 'Montage', 'Miniature', 'Idée', 'Publication', 'Autre'],
+    ntags: ['Idée', 'Script', 'Recherche', 'Planning', 'Réunion', 'Autre'],
+    filesSub: "Rushs, audio, musiques, miniatures et montages de la chaîne.",
+    notesSub: 'Idées, scripts et notes pour les vidéos.',
+    notesHint: 'idée de vidéo, script, plan de tournage',
+    taskEx: 'Ex. Faire la miniature de la vidéo braquage'
   }
 };
 const C = () => CATS[space] || CATS.serveur;
@@ -105,6 +115,7 @@ async function enter(u) {
   QG.bootProgress(75, 'Chargement des données…');
   await Promise.all([loadMembers(), ...Object.keys(S).map(loadTable)]);
   { const { error: se } = await sb.from('files').select('space').limit(1); spaceReady = !se }
+  try { const { data: cfgRows, error: ce } = await sb.from('app_config').select('key,value'); if (!ce && cfgRows) { const mp = Object.fromEntries(cfgRows.map(r => [r.key, r.value])); aiKey = mp.gemini_key || ''; aiModel = mp.gemini_model || 'gemini-2.0-flash'; aiReady = !!aiKey } } catch {}
   QG.bootProgress(95, 'Presque prêt…');
   phase = 'app'; route();
   subscribe();
@@ -119,9 +130,11 @@ const QUERIES = {
   dms: () => sb.from('dms').select('*').order('at', { ascending: false }).limit(1000),
   notifications: () => sb.from('notifications').select('*').order('at', { ascending: false }).limit(200),
   reactions: () => sb.from('reactions').select('*').order('at', { ascending: false }).limit(3000),
-  task_notes: () => sb.from('task_notes').select('*').order('at', { ascending: true }).limit(3000)
+  task_notes: () => sb.from('task_notes').select('*').order('at', { ascending: true }).limit(3000),
+  ideas: () => sb.from('ideas').select('*').order('at', { ascending: false }).limit(500),
+  ai_chats: () => sb.from('ai_chats').select('*').order('at', { ascending: true }).limit(400)
 };
-async function loadTable(t) { const { data, error } = await QUERIES[t](); if (t === 'dms') dmReady = !error; if (t === 'notifications') notifReady = !error; if (t === 'reactions') reactReady = !error; if (t === 'task_notes') { tnReady = !error; if (!error) setTimeout(refreshTn) } if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'messages' || t === 'dms') ensureImgs(); if (t === 'dms') markRead(); render() } }
+async function loadTable(t) { const { data, error } = await QUERIES[t](); if (t === 'dms') dmReady = !error; if (t === 'notifications') notifReady = !error; if (t === 'reactions') reactReady = !error; if (t === 'ideas') ideasReady = !error; if (t === 'task_notes') { tnReady = !error; if (!error) setTimeout(refreshTn) } if (!error) { S[t] = data || []; if (t === 'files') refreshThumbs(); if (t === 'messages' || t === 'dms') ensureImgs(); if (t === 'dms') markRead(); render() } }
 async function loadMembers() { let { data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen,avatar,role,bio').order('name'); profReady = !error; if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at,last_seen').order('name')); if (error) ({ data, error } = await sb.from('members').select('user_id,name,joined_at').order('name')); if (!error) { members = data || []; members.forEach(m => names[m.user_id] = m.name); render(); ensureAvatars() } }
 const timers = {};
 function reload(t) { clearTimeout(timers[t]); timers[t] = setTimeout(() => t === 'members' ? loadMembers() : S[t] && loadTable(t), 250) }
@@ -312,14 +325,14 @@ ${profileEditor()}
 </div>`
 }
 
-const V = { accueil: vHome, fichiers: vFiles, taches: vTasks, planning: vPlan, notes: vNotes, discussion: vChat, equipe: vTeam, remote: vRemote, parametres: vSettings, notifications: vNotifs };
+const V = { accueil: vHome, fichiers: vFiles, taches: vTasks, planning: vPlan, notes: vNotes, discussion: vChat, idees: vIdees, assistant: vAssistant, equipe: vTeam, remote: vRemote, parametres: vSettings, notifications: vNotifs };
 function render(fresh) {
   const main = $('#main'); const a = document.activeElement; const keep = {};
   if (!fresh) main.querySelectorAll('[data-dirty]').forEach(el => { if (el.id) keep[el.id] = el.value });
   const fid = !fresh && a && main.contains(a) && a.id ? a.id : null; let s0 = null, s1 = null; try { s0 = a.selectionStart; s1 = a.selectionEnd } catch {}
   const ch = $('#chatlog'); const atBot = !ch || ch.scrollHeight - ch.scrollTop - ch.clientHeight < 80;
   $('#shell').classList.toggle('gate-mode', phase !== 'app');
-  if (phase === 'app') { renderMe(); const T = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion', equipe: 'Équipe' }; $('#pgtitle').textContent = view === 'equipe' ? 'Équipe' : view === 'remote' ? 'Contrôle à distance' : view === 'parametres' ? 'Paramètres' : view === 'notifications' ? 'Notifications' : `${SPACES[space].label}  ·  ${T[view] || ''}` }
+  if (phase === 'app') { renderMe(); const T = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion', idees: 'Idées', assistant: 'Assistant', equipe: 'Équipe' }; $('#pgtitle').textContent = view === 'equipe' ? 'Équipe' : view === 'remote' ? 'Contrôle à distance' : view === 'parametres' ? 'Paramètres' : view === 'notifications' ? 'Notifications' : `${SPACES[space].label}  ·  ${T[view] || ''}` }
   main.innerHTML = phase === 'setup' ? vSetup() : phase === 'auth' ? vAuth() : phase === 'app' ? ((!spaceReady && !GLOBAL.includes(view) ? `<div class="notice" style="margin-bottom:14px">Pour séparer Serveur GTA 6 et Cheat, lance le fichier <b>supabase-update-0.2.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l'appli. En attendant, tu ne peux rien ajouter.</div>` : '') + V[view]()) : '<p class="empty">Connexion…</p>';
   for (const k in keep) { const el = document.getElementById(k); if (el) { try { el.value = keep[k]; el.dataset.dirty = 1 } catch {} } }
   if (fid) { const el = document.getElementById(fid); if (el) { el.focus({ preventScroll: true }); try { if (s0 != null) el.setSelectionRange(s0, s1) } catch {} } }
@@ -347,10 +360,12 @@ const svg = p => `<svg viewBox="0 0 24 24">${p}</svg>`;
 const LABELS = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion' };
 function toggleGrp(id, save = true) { const g = document.querySelector(`.grp[data-g="${id}"]`); if (!g) return; const closed = g.classList.toggle('closed'); g.querySelector('.gh').setAttribute('aria-expanded', String(!closed)); if (save) try { localStorage.setItem('qg.grp.' + id, closed ? '0' : '1') } catch {} }
 const TABS = { accueil: 'Accueil', taches: 'Tâches', fichiers: 'Fichiers', planning: 'Planning', notes: 'Notes', discussion: 'Discussion' };
+const TABS_YT = { accueil: 'Accueil', idees: 'Idées', taches: 'Tâches', fichiers: 'Fichiers', planning: 'Planning', assistant: 'Assistant', discussion: 'Discussion' };
+const tabsFor = s => s === 'youtube' ? TABS_YT : TABS;
 function buildSide() {
   const g = GLOBAL.includes(view), cur = g ? 'accueil' : view;
   $('#spaceseg').innerHTML = Object.entries(SPACES).map(([id, s]) => `<a role="tab" class="ss-${id}" href="#${id}-${cur}" aria-selected="${!g && space === id}">${esc(s.label)}</a>`).join('');
-  $('#tabs').innerHTML = Object.entries(TABS).map(([v, l]) => `<a href="#${space}-${v}"${!g && view === v ? ' aria-current="page"' : ''}>${l}</a>`).join('')
+  $('#tabs').innerHTML = Object.entries(tabsFor(space)).map(([v, l]) => `<a href="#${space}-${v}"${!g && view === v ? ' aria-current="page"' : ''}>${l}</a>`).join('')
     + `<span class="tabsep" aria-hidden="true"></span><a href="#remote" class="tabg" aria-label="Contrôle à distance" title="Contrôle à distance"${view === 'remote' ? ' aria-current="page"' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="tl">Contrôle à distance</span></a>`;
   const b = $('#nbell'); if (b) { b.hidden = phase !== 'app'; b.classList.toggle('on', view === 'notifications') }
 }
@@ -417,10 +432,10 @@ window.addEventListener('focus', () => { markRead(); renderDM() });
 setInterval(() => { if (phase === 'app') renderDM() }, 60000);
 
 function route() {
-  const h = location.hash.slice(1); const m = /^(serveur|cheat)-([a-z]+)$/.exec(h);
+  const h = location.hash.slice(1); const m = /^(serveur|cheat|youtube)-([a-z]+)$/.exec(h);
   if (m && VIEWS.includes(m[2]) && !GLOBAL.includes(m[2])) { space = m[1]; view = m[2] } else if (GLOBAL.includes(h)) view = h; else view = 'accueil';
   if (fileFolder !== 'Tous' && !C().folders.includes(fileFolder)) fileFolder = 'Tous';
-  $('#shell').classList.toggle('sp-cheat', space === 'cheat' && !GLOBAL.includes(view));
+  { const sh = $('#shell'); sh.classList.remove('sp-cheat', 'sp-youtube'); if (!GLOBAL.includes(view) && space !== 'serveur') sh.classList.add('sp-' + space) }
   buildSide();
   const g = document.querySelector(`.grp[data-g="${space}"]`); if (g && !GLOBAL.includes(view) && g.classList.contains('closed')) toggleGrp(space, false);
   if (view === 'fichiers') refreshThumbs();
@@ -530,6 +545,11 @@ async function act(a, id, el) {
     case 'edittask': return taskForm(find('tasks'));
     case 'deltask': { const tk = find('tasks'); if (!tk) return; return confirmDel(`la tâche « ${tk.title || 'Sans titre'} »`, () => W('tasks', sb.from('tasks').delete().eq('id', id))) }
     case 'newtask': return taskForm(null);
+    case 'newidea': return ideaForm(null);
+    case 'editidea': return ideaForm(S.ideas.find(x => x.id === id));
+    case 'delidea': { const it = S.ideas.find(x => x.id === id); if (!it) return; return confirmDel(`l'idée « ${it.title || 'Sans titre'} »`, () => W('ideas', sb.from('ideas').delete().eq('id', id))) }
+    case 'aiclear': return aiClear();
+    case 'aisave': return aiSaveIdea(id);
     case 'mv': return W('tasks', sb.from('tasks').update({ status: el.dataset.to, upd: new Date().toISOString() }).eq('id', id));
     case 'newev': return evForm(null);
     case 'editev': return evForm(find('events'));
@@ -593,7 +613,9 @@ async function onForm(e) {
 
 const main = $('#main');
 main.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (!b) return; if (b.tagName !== 'INPUT') e.preventDefault(); act(b.dataset.act, b.dataset.id, b) });
+main.addEventListener('submit', e => { if (e.target.id === 'aif') { e.preventDefault(); const t = $('#aitext'); aiSend(t ? t.value : ''); return } });
 main.addEventListener('submit', onForm);
+main.addEventListener('click', e => { const c = e.target.closest && e.target.closest('[data-aitip]'); if (c) { e.preventDefault(); const t = $('#aitext'); if (t) { t.value = c.dataset.aitip; t.focus() } } });
 main.addEventListener('input', e => { const t = e.target; if (t.id && t.type !== 'file' && t.type !== 'password') t.dataset.dirty = 1; if (t.id === 'fq') { fileQ = t.value; render() } if (t.id === 'nq') { noteQ = t.value; render() } });
 main.addEventListener('change', e => { const t = e.target; if (t.id === 'upin' && t.files.length) { const l = [...t.files]; t.value = ''; uploadFiles(l) }
 
@@ -601,6 +623,7 @@ main.addEventListener('change', e => { const t = e.target; if (t.id === 'upin' &
 main.addEventListener('keydown', e => {
   const t = e.target;
   if (t.id === 'ctext' && e.key === 'Enter' && !e.shiftKey && (e.ctrlKey || !inFence(t))) { e.preventDefault(); t.form.requestSubmit() }
+  if (t.id === 'aitext' && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSend(t.value) }
   if ((t.id === 'nbody' || t.id === 'ntitle') && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); const b = main.querySelector('[data-act=savenote]'); if (b) saveNote(b.dataset.id) }
   if (t.tagName === 'LABEL' && (t.htmlFor === 'upin' || t.htmlFor === 'goin') && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); $('#' + t.htmlFor).click() }
 });
@@ -1195,6 +1218,102 @@ $('#dm').addEventListener('dragover', e => { if (!dmWith) return; e.preventDefau
 $('#dm').addEventListener('dragleave', e => { if (e.target.id === 'dm') $('#dm').classList.remove('drop') });
 $('#dm').addEventListener('drop', e => { $('#dm').classList.remove('drop'); if (!dmWith) return; e.preventDefault(); e.stopPropagation(); const l = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (l.length) addImgs('dm', l) });
 $('#dm').addEventListener('click', e => { const b = e.target.closest('[data-dm="unimg"]'); if (b) { e.preventDefault(); e.stopPropagation(); pend.dm.splice(+b.dataset.id, 1); renderDM() } }, true);
+
+// ===================== Espace YouTube : Idées + Assistant IA =====================
+
+// ---------- Tableau d'idées de vidéos ----------
+const IST = [['idee', 'Idées'], ['tournage', 'À tourner'], ['montage', 'En montage'], ['publie', 'Publié']];
+const istLabel = k => (IST.find(s => s[0] === k) || IST[0])[1];
+function ideaCard(it) {
+  const id = esc(it.id);
+  return `<article class="task" draggable="true" data-idea="${id}"><div class="thead"><button class="tt" data-act="editidea" data-id="${id}">${esc(it.title || 'Sans titre')}</button><button class="tdel" data-act="delidea" data-id="${id}" aria-label="Supprimer l'idée" title="Supprimer l'idée"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button></div>
+${it.descr ? `<p>${esc(String(it.descr).slice(0, 160))}</p>` : ''}
+<div class="meta"><span>${it.assignee ? esc(nm(it.assignee)) : 'Personne'}</span><span class="sub" style="margin-left:auto">${esc(ago(it.at))}</span></div></article>`;
+}
+function vIdees() {
+  if (!ideasReady) return `<div class="bar"><div><h2>Idées de vidéos</h2></div></div><div class="notice">Les idées ont besoin d'une petite mise à jour du serveur : lance <b>supabase-update-0.8.sql</b> dans Supabase &gt; SQL Editor, puis redémarre l'appli.</div>`;
+  const list = SP('ideas');
+  return `<div class="bar"><div><h2>Idées de vidéos</h2><p class="sub">Du concept à la publication. Glisse une carte d'une colonne à l'autre, ou demande des idées à l'Assistant.</p></div><button class="pri" data-act="newidea">Nouvelle idée</button></div>
+<div class="kanban k4">${IST.map(([k, l]) => { const col = list.filter(it => (IST.some(s => s[0] === it.status) ? it.status : 'idee') === k); return `<section class="col ci-${k}" data-ideacol="${k}"><h3><i></i>${l} <span>${col.length}</span></h3>${col.map(ideaCard).join('') || '<p class="empty">Rien ici.</p>'}</section>` }).join('')}</div>`;
+}
+function ideaForm(it) {
+  openModal(it ? 'Modifier l’idée' : 'Nouvelle idée', `
+<label>Titre *<input name="title" required maxlength="200" value="${esc(it ? it.title : '')}" placeholder="Ex. 24 h en tant que flic le plus détesté"></label>
+<label>Description<textarea name="descr" rows="5" maxlength="4000" placeholder="Le concept, le format, les étapes…">${esc(it ? it.descr : '')}</textarea></label>
+<div class="two"><label>Colonne<select name="status">${IST.map(([k, l]) => `<option value="${k}"${(it && it.status || 'idee') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label><label>Assignée à<select name="assignee">${memberOpts(it ? it.assignee : me)}</select></label></div>`,
+    v => { const body = { title: v.title.trim().slice(0, 200), descr: v.descr || '', status: v.status, assignee: v.assignee || null, upd: new Date().toISOString() };
+      if (it) return W('ideas', sb.from('ideas').update(body).eq('id', it.id));
+      return W('ideas', sb.from('ideas').insert({ ...body, space: 'youtube' })); }, 'Enregistrer',
+    it ? () => confirmDel('cette idée', () => W('ideas', sb.from('ideas').delete().eq('id', it.id))) : null);
+}
+// glisser-déposer des idées entre colonnes
+let dragIdea = null;
+main.addEventListener('dragstart', e => { const c = e.target.closest && e.target.closest('.task[data-idea]'); if (!c || view !== 'idees') return; dragIdea = c.dataset.idea; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'qg-idea:' + dragIdea) } catch {} setTimeout(() => c.classList.add('dragging')); });
+main.addEventListener('dragend', () => { dragIdea = null; document.querySelectorAll('.task.dragging,.col.over').forEach(x => x.classList.remove('dragging', 'over')) });
+main.addEventListener('dragover', e => { if (!dragIdea) return; const col = e.target.closest && e.target.closest('.col[data-ideacol]'); if (!col) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; document.querySelectorAll('.col.over').forEach(x => { if (x !== col) x.classList.remove('over') }); col.classList.add('over'); }, true);
+main.addEventListener('drop', async e => { if (!dragIdea) return; const col = e.target.closest && e.target.closest('.col[data-ideacol]'); if (!col) return; e.preventDefault(); e.stopPropagation(); const id = dragIdea, to = col.dataset.ideacol; dragIdea = null; col.classList.remove('over'); const it = S.ideas.find(x => x.id === id); if (!it || it.status === to) return render(); const prev = it.status; it.status = to; render(); const { error } = await sb.from('ideas').update({ status: to, upd: new Date().toISOString() }).eq('id', id); if (error) { it.status = prev; render(); toast(errMsg(error)) } else toast(`« ${it.title} » → ${istLabel(to)}`); }, true);
+
+// ---------- Assistant IA (Gemini) ----------
+const SPARK = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M12 2.5l1.9 4.9L18.8 9l-4.9 1.6L12 15.5l-1.9-4.9L5.2 9l4.9-1.6z"/></svg>';
+function aiHtml(t) {
+  t = String(t || '');
+  const re = /```([\w+#.-]{0,20})[^\S\n]*\n?([\s\S]*?)(?:```|$)/g; let o = '', last = 0, m;
+  const inl = s => esc(s).replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>').replace(/`([^`\n]{1,300})`/g, '<code class="ic">$1</code>').replace(/\n/g, '<br>');
+  while ((m = re.exec(t))) { if (m[0] === '') { re.lastIndex++; continue } o += inl(t.slice(last, m.index).replace(/\n$/, '')); const tag = (m[1] || '').toLowerCase(), code = m[2].replace(/\n$/, ''), lang = LANG[tag] || (tag ? 'txt' : guessLang(code)); o += `<div class="cb"><div class="cbh"><span>${esc(LNAME[lang] || 'Code')}</span><button type="button" class="cbcopy" data-copycode>Copier</button></div><pre><code>${hl(code, lang)}</code></pre></div>`; last = re.lastIndex; if (t[last] === '\n') last++; }
+  return o + inl(t.slice(last));
+}
+const AI_TIPS = ['3 idées de vidéos courtes sur notre serveur GTA RP', 'Des titres qui donnent envie de cliquer', 'Un script d’intro de 15 secondes', 'Des idées de miniatures qui attirent l’œil'];
+function vAssistant() {
+  const head = `<div class="bar"><div><h2>Assistant IA</h2><p class="sub">${aiReady ? 'Propulsé par Gemini · ta conversation est privée, personne d’autre ne la voit.' : 'À configurer avant utilisation.'}</p></div>${aiReady && S.ai_chats.length ? '<button class="ghost" data-act="aiclear">Effacer la discussion</button>' : ''}</div>`;
+  if (!aiReady) return head + `<div class="notice">L'assistant a besoin d'une clé Gemini (gratuite). Un admin de l'équipe doit l'ajouter une fois : crée une clé sur <b>Google AI Studio</b>, puis lance <b>supabase-update-0.8.sql</b> dans Supabase et colle la clé dedans (tout est expliqué dans le fichier). Ensuite, redémarre l'appli.</div>`;
+  const msgs = S.ai_chats.slice().sort((a, b) => ts(a.at) - ts(b.at));
+  const body = msgs.length ? msgs.map(m => m.role === 'user'
+    ? `<div class="aim me"><div class="aib">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`
+    : `<div class="aim"><span class="aiav">${SPARK}</span><div class="aiw"><div class="aib">${aiHtml(m.content)}</div><div class="airow"><button class="sm ghost" data-act="aisave" data-id="${esc(m.id)}">+ Enregistrer dans les idées</button></div></div></div>`).join('')
+    : `<div class="aiempty"><span class="aiav big">${SPARK}</span><b>Demande-moi des idées de vidéos</b><span>Titres, scripts, miniatures, concepts… je suis là pour brainstormer avec toi.</span></div>`;
+  const pending = aiBusy ? `<div class="aim"><span class="aiav">${SPARK}</span><div class="aiw"><div class="aib typing"><i></i><i></i><i></i></div></div></div>` : '';
+  return head + `<div class="aiwrap"><section class="aicol"><div class="ailog" id="ailog">${body}${pending}</div>
+<form class="aisend" id="aif"><textarea id="aitext" rows="1" maxlength="4000" placeholder="Demande une idée, un titre, un script…" aria-label="Message à l'assistant"${aiBusy ? ' disabled' : ''}></textarea><button class="pri" ${aiBusy ? 'disabled' : ''} aria-label="Envoyer">Envoyer</button></form></section>
+<aside class="aiside"><section class="tile"><h3>Pour démarrer</h3><div class="aitips">${AI_TIPS.map(t => `<button class="chip" data-aitip="${esc(t)}">${esc(t)}</button>`).join('')}</div></section>
+<section class="tile"><h3>Idées enregistrées<a href="#youtube-idees">Voir →</a></h3>${S.ideas.filter(i => spOf(i) === 'youtube').slice(0, 5).map(i => `<button class="hrowb" data-act="editidea" data-id="${esc(i.id)}"><span class="ht">${esc(i.title)}</span><span class="hm">${esc(istLabel(i.status))}</span></button>`).join('') || '<p class="empty">Aucune idée pour l’instant.</p>'}</section></aside></div>`;
+}
+async function askGemini(history) {
+  const contents = history.map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: String(m.content || '') }] }));
+  const sys = { parts: [{ text: "Tu es l'assistant créatif d'une petite équipe qui fait des vidéos YouTube sur son serveur GTA RP (FiveM). Réponds en français, de façon concrète et concise, avec des idées exploitables. Propose des listes courtes quand c'est pertinent." }] };
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(aiModel) + ':generateContent?key=' + encodeURIComponent(aiKey), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ systemInstruction: sys, contents, generationConfig: { temperature: 0.9, maxOutputTokens: 1024 } })
+  });
+  let j = null; try { j = await r.json() } catch {}
+  if (!r.ok) throw new Error((j && j.error && j.error.message) || ('Gemini a répondu ' + r.status));
+  const c = j && j.candidates && j.candidates[0];
+  const txt = c && c.content && c.content.parts && c.content.parts.map(p => p.text || '').join('');
+  if (!txt) throw new Error(c && c.finishReason === 'SAFETY' ? 'Gemini a bloqué cette réponse.' : 'Réponse vide de Gemini.');
+  return txt.trim();
+}
+async function aiSend(text) {
+  text = String(text || '').trim(); if (!text || aiBusy || !aiReady) return;
+  const t = $('#aitext'); if (t) { t.value = ''; t.style.height = 'auto' }
+  const hist = S.ai_chats.slice().sort((a, b) => ts(a.at) - ts(b.at)).map(m => ({ role: m.role, content: m.content }));
+  const umsg = { id: 'tmp' + Math.random(), role: 'user', content: text, at: new Date().toISOString() };
+  S.ai_chats.push(umsg); aiBusy = true; render(); aiScroll();
+  sb.from('ai_chats').insert({ role: 'user', content: text }).select().single().then(({ data }) => { if (data) { umsg.id = data.id } }, () => {});
+  try {
+    const reply = await askGemini(hist.concat([{ role: 'user', content: text }]));
+    const mmsg = { id: 'tmp' + Math.random(), role: 'model', content: reply, at: new Date().toISOString() };
+    S.ai_chats.push(mmsg); aiBusy = false; render(); aiScroll();
+    const { data } = await sb.from('ai_chats').insert({ role: 'model', content: reply }).select().single(); if (data && data.id) { mmsg.id = data.id; if (view === 'assistant') render() }
+  } catch (e) { aiBusy = false; render(); toast('Assistant : ' + e.message); }
+}
+function aiScroll() { const l = $('#ailog'); if (l) l.scrollTop = l.scrollHeight; }
+async function aiClear() {
+  confirmDel('toute ta discussion avec l’assistant', async () => { const ids = S.ai_chats.map(m => m.id).filter(x => !String(x).startsWith('tmp')); S.ai_chats = []; render(); if (ids.length) await sb.from('ai_chats').delete().in('id', ids); return true });
+}
+async function aiSaveIdea(id) {
+  const m = S.ai_chats.find(x => x.id === id); if (!m) return;
+  const body = m.content.trim(); const title = body.split('\n')[0].replace(/^[#*\-\s]+/, '').slice(0, 120) || 'Idée de vidéo';
+  if (await W('ideas', sb.from('ideas').insert({ title, descr: body.slice(0, 4000), space: 'youtube', status: 'idee' }))) toast('Ajouté aux idées');
+}
 
 // Boutons de fenêtre façon macOS
 document.querySelectorAll('[data-win]').forEach(b => b.addEventListener('click', () => QG.win(b.dataset.win)));
