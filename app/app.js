@@ -360,7 +360,7 @@ const svg = p => `<svg viewBox="0 0 24 24">${p}</svg>`;
 const LABELS = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion' };
 function toggleGrp(id, save = true) { const g = document.querySelector(`.grp[data-g="${id}"]`); if (!g) return; const closed = g.classList.toggle('closed'); g.querySelector('.gh').setAttribute('aria-expanded', String(!closed)); if (save) try { localStorage.setItem('qg.grp.' + id, closed ? '0' : '1') } catch {} }
 const TABS = { accueil: 'Accueil', taches: 'Tâches', fichiers: 'Fichiers', planning: 'Planning', notes: 'Notes', discussion: 'Discussion' };
-const TABS_YT = { accueil: 'Accueil', idees: 'Idées', taches: 'Tâches', fichiers: 'Fichiers', planning: 'Planning', assistant: 'Assistant', discussion: 'Discussion' };
+const TABS_YT = { accueil: 'Accueil', idees: 'Idées', taches: 'Tâches', fichiers: 'Fichiers', planning: 'Planning', notes: 'Notes', assistant: 'Assistant', discussion: 'Discussion' };
 const tabsFor = s => s === 'youtube' ? TABS_YT : TABS;
 function buildSide() {
   const g = GLOBAL.includes(view), cur = g ? 'accueil' : view;
