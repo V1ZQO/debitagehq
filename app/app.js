@@ -174,7 +174,7 @@ async function onInsert(t, d) {
     if (!(focused && view === 'discussion' && space === spOf(d))) ping('msg');
   }
   if (!d || d.author === me || await QG.isFocused()) return;
-  const sv = v => `${spOf(d)}-${v}`, tag = spOf(d) === 'cheat' ? '[Cheat] ' : '[Serveur] ';
+  const sv = v => `${spOf(d)}-${v}`, tag = spOf(d) === 'cheat' ? '[Cheat] ' : spOf(d) === 'youtube' ? '[YouTube] ' : '[Serveur] ';
   if (t === 'messages') alert2(tag + nm(d.author), bodyOf(d), sv('discussion'));
   else if (t === 'files') alert2(tag + 'Nouveau fichier', `${nm(d.author)} a partagé « ${String(d.name || '')} »`, sv('fichiers'));
   else if (t === 'events') alert2(tag + 'Nouveau rendez-vous', `${String(d.title || '')}, ${fmtDate(d.ev_date).w}`, sv('planning'));
@@ -359,8 +359,8 @@ const ICONS = {
 const svg = p => `<svg viewBox="0 0 24 24">${p}</svg>`;
 const LABELS = { accueil: 'Accueil', fichiers: 'Fichiers', taches: 'Tâches', planning: 'Planning', notes: 'Notes & docs', discussion: 'Discussion' };
 function toggleGrp(id, save = true) { const g = document.querySelector(`.grp[data-g="${id}"]`); if (!g) return; const closed = g.classList.toggle('closed'); g.querySelector('.gh').setAttribute('aria-expanded', String(!closed)); if (save) try { localStorage.setItem('qg.grp.' + id, closed ? '0' : '1') } catch {} }
-const TABS = { accueil: 'Accueil', taches: 'Tâches', fichiers: 'Fichiers', planning: 'Planning', notes: 'Notes', discussion: 'Discussion' };
-const TABS_YT = { accueil: 'Accueil', idees: 'Idées', taches: 'Tâches', fichiers: 'Fichiers', planning: 'Planning', notes: 'Notes', assistant: 'Assistant', discussion: 'Discussion' };
+const TABS = { accueil: 'Accueil', taches: 'Tâches', fichiers: 'Fichiers', notes: 'Notes', discussion: 'Discussion' };
+const TABS_YT = { accueil: 'Accueil', idees: 'Idées', taches: 'Tâches', fichiers: 'Fichiers', notes: 'Notes', assistant: 'Assistant', discussion: 'Discussion' };
 const tabsFor = s => s === 'youtube' ? TABS_YT : TABS;
 function buildSide() {
   const g = GLOBAL.includes(view), cur = g ? 'accueil' : view;
@@ -633,7 +633,7 @@ main.addEventListener('drop', e => { if (dragFile || dragTask) return; if (phase
 main.addEventListener('paste', e => { if (e.target.id !== 'ctext') return; const l = [...(e.clipboardData && e.clipboardData.files || [])].filter(isImg); if (l.length) { e.preventDefault(); addImgs('chat', l) } });
 document.addEventListener('dragover', e => e.preventDefault()); document.addEventListener('drop', e => e.preventDefault());
 window.addEventListener('hashchange', () => { if (phase === 'app') route() });
-QG.onNav(v => { if (typeof v !== 'string') return; if (v.startsWith('dm:')) return openDm(v.slice(3)); if (/^(serveur|cheat)-[a-z]+$/.test(v)) { location.hash = v; return } if (VIEWS.includes(v)) location.hash = hrefOf(v) });
+QG.onNav(v => { if (typeof v !== 'string') return; if (v.startsWith('dm:')) return openDm(v.slice(3)); if (/^(serveur|cheat|youtube)-[a-z]+$/.test(v)) { location.hash = v; return } if (VIEWS.includes(v)) location.hash = hrefOf(v) });
 setInterval(() => { if (phase === 'app' && $('#modal').hidden) render() }, 60000);
 
 // Mises à jour
@@ -1214,9 +1214,12 @@ for (const [id, acc, multi] of [['cimgin', 'image/png,image/jpeg,image/gif,image
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-pick]'); if (!b) return; e.preventDefault(); const i = document.getElementById(b.dataset.pick); if (i) i.click() });
 $('#dm').addEventListener('paste', e => { if (e.target.id !== 'dmtext') return; const l = [...(e.clipboardData && e.clipboardData.files || [])].filter(isImg); if (l.length) { e.preventDefault(); addImgs('dm', l) } });
-$('#dm').addEventListener('dragover', e => { if (!dmWith) return; e.preventDefault(); e.stopPropagation(); $('#dm').classList.add('drop') });
-$('#dm').addEventListener('dragleave', e => { if (e.target.id === 'dm') $('#dm').classList.remove('drop') });
-$('#dm').addEventListener('drop', e => { $('#dm').classList.remove('drop'); if (!dmWith) return; e.preventDefault(); e.stopPropagation(); const l = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (l.length) addImgs('dm', l) });
+let dmDragN = 0; const dmClearDrop = () => { dmDragN = 0; $('#dm').classList.remove('drop') };
+$('#dm').addEventListener('dragenter', e => { if (!dmWith) return; e.preventDefault(); dmDragN++; $('#dm').classList.add('drop') });
+$('#dm').addEventListener('dragover', e => { if (!dmWith) return; e.preventDefault(); e.stopPropagation() });
+$('#dm').addEventListener('dragleave', e => { if (!dmWith) return; if (--dmDragN <= 0) dmClearDrop() });
+$('#dm').addEventListener('drop', e => { dmClearDrop(); if (!dmWith) return; e.preventDefault(); e.stopPropagation(); const l = [...(e.dataTransfer && e.dataTransfer.files || [])]; if (l.length) addImgs('dm', l) });
+window.addEventListener('dragend', dmClearDrop); window.addEventListener('drop', dmClearDrop);
 $('#dm').addEventListener('click', e => { const b = e.target.closest('[data-dm="unimg"]'); if (b) { e.preventDefault(); e.stopPropagation(); pend.dm.splice(+b.dataset.id, 1); renderDM() } }, true);
 
 // ===================== Espace YouTube : Idées + Assistant IA =====================
